@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.errors import AppError
 from app.models.settings import Setting
 
 DEFAULTS: dict[str, Any] = {
@@ -40,7 +41,28 @@ def list_all(db: Session) -> list[Setting]:
     return db.query(Setting).order_by(Setting.key).all()
 
 
+def set_value_no_commit(db: Session, key: str, value: Any) -> None:
+    """Write a setting inside the caller's transaction (used to keep derived
+    settings such as `default_site_id` in sync with catalog changes)."""
+    row = db.query(Setting).filter(Setting.key == key).first()
+    if row is None:
+        db.add(Setting(key=key, value=value))
+    else:
+        row.value = value
+    db.flush()
+
+
+# Derived from catalogs; changed only through their own services.
+READ_ONLY_KEYS = {"default_site_id"}
+
+
 def update_value(db: Session, key: str, value: Any) -> Setting:
+    if key in READ_ONLY_KEYS:
+        raise AppError(
+            "READ_ONLY_SETTING",
+            "Este parámetro se cambia desde Catálogos > Sitios (sitio por defecto).",
+            409,
+        )
     row = db.query(Setting).filter(Setting.key == key).first()
     if row is None:
         if key not in DEFAULTS:

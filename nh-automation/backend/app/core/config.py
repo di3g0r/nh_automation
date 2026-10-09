@@ -29,6 +29,15 @@ class Settings(BaseSettings):
     backup_dir: str = "/backups"
     backup_retention_days: int = 30
 
+    # External catalog/inventory database (FR-CAT-7, phase 1). Its structure
+    # is not known yet: any SQLAlchemy URL plus one read-only SELECT per
+    # catalog, aliasing columns to the canonical import fields
+    # (see app/services/imports/columns.py and backend/external_sources/).
+    # Empty URL = the "external database" import source is disabled.
+    external_catalog_db_url: str = ""
+    external_products_query_file: str = "external_sources/products.sql"
+    external_packaging_query_file: str = "external_sources/packaging_items.sql"
+
     @property
     def allowed_origins_list(self) -> list[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]

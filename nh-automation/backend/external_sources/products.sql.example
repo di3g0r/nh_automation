@@ -1,0 +1,12 @@
+-- Example only: replace table/column names with the real ones, keep the aliases.
+-- Must be a single read-only SELECT. Copy to products.sql to enable.
+SELECT
+    p.clave         AS codigo,
+    p.descripcion   AS nombre,
+    p.proveedor     AS proveedor,
+    p.presentacion  AS presentacion,
+    p.litros        AS litros_por_envase,
+    e.existencia    AS existencia_inicial
+FROM productos p
+LEFT JOIN existencias e ON e.clave = p.clave
+WHERE p.activo = 1

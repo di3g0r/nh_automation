@@ -1,0 +1,15 @@
+-- Example only: replace table/column names with the real ones, keep the aliases.
+-- Must be a single read-only SELECT. Copy to packaging_items.sql to enable.
+SELECT
+    m.clave         AS codigo,
+    m.descripcion   AS descripcion,
+    CASE
+        WHEN m.clave LIKE 'ENV%' THEN 'envase'
+        WHEN m.clave LIKE 'CAJ%' THEN 'caja'
+        WHEN m.clave LIKE 'BOL%' THEN 'bolsa'
+        WHEN m.clave LIKE 'ETQ%' THEN 'etiqueta'
+        ELSE 'otro'
+    END             AS categoria,
+    m.minimo        AS umbral_stock_bajo,
+    m.existencia    AS existencia_inicial
+FROM materiales m

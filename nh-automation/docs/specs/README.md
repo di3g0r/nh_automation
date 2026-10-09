@@ -19,7 +19,7 @@ Every session reads `CLAUDE.md` automatically, which points to `CONTEXT.md`, `00
 Start a **new** Claude Code session in the repository and paste (change the phase number):
 
 ```
-Implement phase 0 following docs/specs/phase-0-foundation.md.
+Implement phase 1 following docs/specs/phase-1-catalogs-inventory.md.
 First read CLAUDE.md, docs/CONTEXT.md, docs/specs/00-overview.md and docs/specs/01-data-model.md.
 Write a short plan before coding. Do not build anything from later phases.
 Finish by checking the "Definition of done" list, running all tests, and updating docs/PROGRESS.md.

@@ -111,3 +111,93 @@
 - [x] Lint, type checks and tests pass — backend: `ruff check`, `mypy`, `pytest` (43/43) all clean. Frontend: `eslint`, `tsc --noEmit`, `vitest` (7/7), `npm run build` all clean.
 - [x] `CLAUDE.md` "Commands" section filled in.
 - [x] `docs/PROGRESS.md` updated (this entry).
+
+## Phase 1 — Catalogs and Inventory (2026-10-09)
+
+### What was built
+
+- **Owner's change:** product/inventory data comes from an **external database
+  of unknown structure**, not a spreadsheet. The import is a pluggable pipeline
+  (`app/services/imports/`: `sources.py`, `columns.py`, `import_service.py`).
+  The `external_db` source runs a configured read-only SELECT (setup guide:
+  `backend/external_sources/README.md`, example queries `*.sql.example`), and
+  CSV/XLSX upload is kept as a fallback. See `docs/DECISIONS.md`.
+- **Backend**
+  - Tables `sites`, `clients`, `products`, `packaging_items`, `machines`,
+    `stock_levels`, `stock_movements`. Migration
+    `b1c4e2a9f301_phase1_catalogs_inventory.py` also seeds the default site,
+    NOBELTECH/AGRONB and the 14 packaging items, and sets `default_site_id`.
+  - Services: `catalog_service` (CRUD, unique codes, deactivation, one default
+    site), `machine_service` (key shown once, SHA-256 stored, rotate),
+    `stock_service` (`get_available`, `apply_movement` with row lock + atomic
+    increment; reserved = 0 until phase 2), `inventory_service` (stock list
+    with filters, receipts, adjustments, movements, alerts), `imports/*`,
+    `seed_service`.
+  - Endpoints per spec: `/products`, `/packaging-items`, `/clients`, `/sites`,
+    `/machines` (+ `rotate-key`), `/imports/{kind}/preview|confirm`
+    (+ `/imports/{kind}/sources`), `/inventory`, `/inventory/movements`,
+    `/inventory/receipts`, `/inventory/adjustments`, `/inventory/availability`,
+    `/inventory/alerts` (+ `/inventory/movement-users`). Every write is audited.
+  - CLI: `seed-dev`, `seed-catalogs`, `import-catalog` (preview or `--apply`).
+  - New deps: `python-multipart`, `openpyxl` (rebuild the `api` image).
+- **Frontend**
+  - Catálogos (Productos, Materiales de empaque, Clientes, Sitios, Máquinas)
+    on a generic `CatalogPage` (search, active filter, pagination,
+    create/edit, activate/deactivate). Machine key dialog with copy button;
+    key rotation with confirmation; "Marcar como predeterminado" for sites.
+  - Importar dialog (source, mode, file, preview table with error/warning
+    highlighting, confirm disabled while there are errors).
+  - Inventario: Productos / Materiales de empaque tabs (site, category,
+    search, low-stock, negative and inactive filters; the reserved column is
+    shown, 0 for now), Movimientos tab (item, type, site, user and local
+    date-range filters; order/assignment link when present), Entrada and
+    Ajuste dialogs (the adjustment shows current stock and the delta).
+  - Inicio: stock alerts card. Top bar: alert count badge.
+- **Tests:** backend 128 passing (up from 43), plus a PostgreSQL concurrency
+  test that is skipped unless `TEST_POSTGRES_URL` is set (run once and passed). Frontend 12 (up from 7).
+- Samples: `tools/samples/productos_ejemplo.csv`, `materiales_ejemplo.csv`.
+
+### Deviations from the spec
+
+- FR-CAT-7 source changed to "external DB (configurable) + CSV/XLSX" at the
+  owner's request.
+- A single `NUMERIC(12,2)` quantity column for both item kinds (see DECISIONS).
+- `default_site_id` setting made read-only (derived from `sites.is_default`).
+- Phase-0 model fix: `audit_log.entity` / `user_id` now declare the indexes
+  their migration already creates (`alembic check` was reporting drift). No
+  new migration was needed.
+
+### Verified end-to-end (dev stack, PostgreSQL)
+
+- Migration `b1c4e2a9f301` applied on `api` start; `alembic check` reports no
+  drift; seed counts correct (1 site, 2 clients, 14 packaging items).
+- `seed-dev`, then via the API: CSV import (preview → confirm, upsert,
+  initial stock), packaging import, inventory list, alerts, adjustment with
+  computed delta, movements list; admin is denied `/audit` (403).
+- Concurrency test with 20 threads against a scratch PostgreSQL database:
+  on hand == sum of movements, a single stock row.
+- UI loaded in Chrome (Inicio alerts card + badge, Inventario materiales tab,
+  Catálogos → Máquinas) with no console errors.
+
+### Known issues / not verified
+
+- **The external DB source has not run against the real system** (no access
+  yet). It was tested with an SQLite file that has a different schema. Pending:
+  driver, `.sql` files, and the source-of-truth/sync decision
+  (TODO(external-db)).
+- UI flows (create/edit forms, import dialog, Entrada/Ajuste dialogs, machine
+  key dialog) were exercised through the API and type-checked builds, but
+  were not click-tested in the browser.
+- Low-stock thresholds of the seeded packaging items are 0 until someone sets them.
+- Prod compose, backup and restore are still not exercised (carried over from phase 0).
+- Frontend bundle > 500 kB warning (no code splitting yet).
+
+### Definition of done
+
+- [x] All catalogs manageable in Spanish UI; seed data present.
+- [x] A sample product spreadsheet imports correctly; errors are shown before
+      saving (tests + live run with `tools/samples/productos_ejemplo.csv`). The
+      external-DB source follows the same flow (tested with a stand-in DB).
+- [x] Receipts and adjustments update stock with movements and audit entries.
+- [x] Alerts visible (Inicio card, top-bar badge, inventory badges/filters).
+- [x] Tests pass; `docs/PROGRESS.md` updated.

@@ -27,7 +27,9 @@ function readCookie(name: string): string | null {
 const STATE_CHANGING = new Set(["POST", "PATCH", "PUT", "DELETE"]);
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const isForm = body instanceof FormData;
+  // For FormData the browser sets the multipart Content-Type (with boundary).
+  const headers: Record<string, string> = isForm ? {} : { "Content-Type": "application/json" };
   if (STATE_CHANGING.has(method)) {
     const csrf = readCookie("nh_csrf");
     if (csrf) headers["X-CSRF-Token"] = csrf;
@@ -37,7 +39,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     headers,
     credentials: "include",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 204) return undefined as T;
@@ -60,6 +62,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
+  postForm: <T>(path: string, form: FormData) => request<T>("POST", path, form),
   patch: <T>(path: string, body?: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
 };

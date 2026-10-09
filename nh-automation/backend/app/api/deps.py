@@ -58,3 +58,16 @@ def require_permission(permission: Permission) -> Callable[..., User]:
         return user
 
     return checker
+
+
+def require_any_permission(*permissions: Permission) -> Callable[..., User]:
+    """Like require_permission, but any one of `permissions` is enough."""
+
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if not any(role_has_permission(user.role, p) for p in permissions):
+            raise AppError(
+                "FORBIDDEN", "No tiene permiso para realizar esta acción.", 403
+            )
+        return user
+
+    return checker

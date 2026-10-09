@@ -35,6 +35,7 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
       TZ: ${TZ:-America/Mazatlan}
       PLC_ALLOWED_NETWORKS: ${PLC_ALLOWED_NETWORKS:-192.168.50.0/24}
+      EXTERNAL_CATALOG_DB_URL: ${EXTERNAL_CATALOG_DB_URL:-}
     volumes:
       - ../backend:/app
     ports:

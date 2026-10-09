@@ -47,6 +47,9 @@ This README covers phase 0 (foundation). It will grow with each phase.
 | Logs | `docker compose -f deploy/docker-compose.dev.yml logs -f api` |
 | Create master admin | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli create-master-admin` |
 | Seed default settings | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-settings` |
+| Seed dev data (dev only: sample products, M01–M06, one user per role) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-dev` |
+| Re-ensure base catalogs (site, clients, 14 packaging items) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-catalogs` |
+| Preview a catalog import from the external DB (add `--apply --username <u>` to save) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli import-catalog products` |
 | New migration | `docker compose -f deploy/docker-compose.dev.yml exec api alembic revision --autogenerate -m "message"` |
 | Apply migrations | `docker compose -f deploy/docker-compose.dev.yml exec api alembic upgrade head` |
 
@@ -87,6 +90,14 @@ npm run test          # Vitest
 npm run lint          # ESLint
 npm run typecheck     # tsc --noEmit
 ```
+
+## External catalog database
+
+The real product/packaging inventory lives in another database whose
+structure isn't known yet. Imports (UI: Catálogos → Productos / Materiales de
+empaque → Importar) can read it once IT sets `EXTERNAL_CATALOG_DB_URL` and
+writes two SELECT files. See `backend/external_sources/README.md`. CSV/XLSX
+upload keeps working as a fallback (samples in `tools/samples/`).
 
 ## Backups
 

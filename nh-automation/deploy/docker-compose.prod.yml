@@ -35,6 +35,11 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       TZ: ${TZ:-America/Mazatlan}
       PLC_ALLOWED_NETWORKS: ${PLC_ALLOWED_NETWORKS}
+      # External catalog DB for imports (empty = disabled); see backend/external_sources/README.md
+      EXTERNAL_CATALOG_DB_URL: ${EXTERNAL_CATALOG_DB_URL:-}
+    volumes:
+      # Query files are edited by IT on the server, no rebuild needed.
+      - ../backend/external_sources:/app/external_sources:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 30s

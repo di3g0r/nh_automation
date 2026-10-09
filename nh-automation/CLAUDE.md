@@ -35,6 +35,9 @@ Full reference in `README.md`. Quick list:
 | Start prod stack | `docker compose -f deploy/docker-compose.prod.yml up -d --build` |
 | Create master admin | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli create-master-admin` |
 | Seed default settings | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-settings` |
+| Seed dev data (dev only: sample products, M01–M06, one user per role) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-dev` |
+| Re-ensure base catalogs (site, clients, 14 packaging items) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-catalogs` |
+| Preview a catalog import from the external DB (add `--apply --username <u>` to save) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli import-catalog products` |
 | New migration | `docker compose -f deploy/docker-compose.dev.yml exec api alembic revision --autogenerate -m "message"` |
 | Apply migrations | `docker compose -f deploy/docker-compose.dev.yml exec api alembic upgrade head` |
 | Backend tests | `cd backend && pytest` (venv with `requirements-dev.txt`; uses in-memory SQLite, see `tests/conftest.py`) |
