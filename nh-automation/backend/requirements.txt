@@ -1,0 +1,12 @@
+# Pinned runtime dependencies for prod image builds (kept in sync with pyproject.toml).
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+pydantic==2.9.2
+pydantic-settings==2.6.1
+argon2-cffi==23.1.0
+typer==0.13.1
+python-dateutil==2.9.0.post0
+tzdata==2024.2

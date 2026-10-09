@@ -26,4 +26,20 @@ Do not implement features from later phases. If the current phase needs somethin
 
 ## Commands
 
-Fill in during phase 0 (start, stop, test, lint, migrate, seed, create master admin).
+Full reference in `README.md`. Quick list:
+
+| Action | Command |
+|---|---|
+| Start dev stack | `docker compose -f deploy/docker-compose.dev.yml up --build` |
+| Stop dev stack | `docker compose -f deploy/docker-compose.dev.yml down` |
+| Start prod stack | `docker compose -f deploy/docker-compose.prod.yml up -d --build` |
+| Create master admin | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli create-master-admin` |
+| Seed default settings | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-settings` |
+| New migration | `docker compose -f deploy/docker-compose.dev.yml exec api alembic revision --autogenerate -m "message"` |
+| Apply migrations | `docker compose -f deploy/docker-compose.dev.yml exec api alembic upgrade head` |
+| Backend tests | `cd backend && pytest` (venv with `requirements-dev.txt`; uses in-memory SQLite, see `tests/conftest.py`) |
+| Backend lint / types | `cd backend && ruff check app tests` / `mypy app` |
+| Frontend tests | `cd frontend && npm run test` (Vitest) |
+| Frontend lint / types / build | `cd frontend && npm run lint` / `npm run typecheck` / `npm run build` |
+| Manual backup | `docker compose -f deploy/docker-compose.prod.yml exec backup /usr/local/bin/backup.sh` |
+| Restore a backup | `./deploy/restore.sh deploy/backups/<file>.sql.gz` |

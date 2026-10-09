@@ -1,0 +1,59 @@
+# Dev stack: hot reload for both api and web, seed-friendly Postgres.
+# Run from the repo root: docker compose -f deploy/docker-compose.dev.yml up
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nh_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-nh_automation}
+      TZ: ${TZ:-America/Mazatlan}
+    volumes:
+      - db-data-dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432" # exposed in dev only, for local DB tools
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nh_app} -d ${POSTGRES_DB:-nh_automation}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://nh_app:change-me@db:5432/nh_automation}
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-me}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      TZ: ${TZ:-America/Mazatlan}
+      PLC_ALLOWED_NETWORKS: ${PLC_ALLOWED_NETWORKS:-192.168.50.0/24}
+    volumes:
+      - ../backend:/app
+    ports:
+      - "8000:8000"
+
+  web:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile.dev
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+
+volumes:
+  db-data-dev:

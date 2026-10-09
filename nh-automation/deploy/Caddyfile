@@ -1,0 +1,28 @@
+# Caddy: serves the built frontend, proxies /api and /plc to the API
+# container, terminates HTTPS with Caddy's internal CA (NFR-1, overview §3, §8).
+#
+# The IT person installs Caddy's internal root CA on office machines once
+# (see deploy/README under "Internal HTTPS"), or browsers show a one-time
+# self-signed warning, as expected for a LAN-only app with no public domain.
+
+{$CADDY_SITE_ADDRESS:https://localhost} {
+	tls internal
+
+	encode gzip
+
+	@api path /api/*
+	handle @api {
+		reverse_proxy api:8000
+	}
+
+	@plc path /plc/*
+	handle @plc {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

@@ -1,0 +1,3 @@
+# Runs nightly at 02:00 container time (TZ=America/Mazatlan is set on the
+# backup service in docker-compose.prod.yml).
+0 2 * * * /usr/local/bin/backup.sh >> /proc/1/fd/1 2>> /proc/1/fd/2
