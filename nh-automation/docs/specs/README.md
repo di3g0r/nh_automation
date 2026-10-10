@@ -2,24 +2,26 @@
 
 Build **one phase per Claude Code session**, in order. Each phase delivers something that works and can be tested before moving on.
 
-| Phase | Spec | Result |
-|---|---|---|
-| 0 | `phase-0-foundation.md` | Server skeleton running; login and user management |
-| 1 | `phase-1-catalogs-inventory.md` | Products, packaging, machines; spreadsheets imported; stock |
-| 2 | `phase-2-work-orders.md` | Digital work orders; overselling blocked; printing |
-| 3 | `phase-3-assignments-operator.md` | Full process without paper (manual operator controls) |
-| 4 | `phase-4-plc-api-simulator.md` | PLC API working with simulated machines |
-| 5 | `phase-5-real-plc.md` | Real PLCs connected (needs PLC model first) |
-| 6 | `phase-6-dashboard.md` | Production dashboard |
+| Phase | Spec | Result | Status |
+|---|---|---|---|
+| 0 | `phase-0-foundation.md` | Server skeleton running; login and user management | Done |
+| 1 | `phase-1-catalogs-inventory.md` | Products, packaging, machines; import; stock | Done |
+| 1b | `phase-1b-v2-updates.md` | Razones sociales, cancel permission, expiry setting (v2 decisions applied to built code) | **Next** |
+| 2 | `phase-2-work-orders.md` | Digital work orders with several source products; overselling blocked; printing | |
+| 3 | `phase-3-assignments-operator.md` | Full process without paper (manual operator controls) | |
+| 4 | `phase-4-plc-database-interface.md` | PLCs read pending orders and write events in the database; document for the PLC programmer | |
+| 6 | `phase-6-dashboard.md` | Production dashboard | |
+
+`phase-4-plc-api-simulator.md` and `phase-5-real-plc.md` are obsolete and can be deleted. There is no phase 5.
 
 Every session reads `CLAUDE.md` automatically, which points to `CONTEXT.md`, `00-overview.md` and `01-data-model.md`. Those keep all phases consistent.
 
 ## Prompt for each session
 
-Start a **new** Claude Code session in the repository and paste (change the phase number):
+Start a **new** Claude Code session in the repository and paste (change the phase):
 
 ```
-Implement phase 1 following docs/specs/phase-1-catalogs-inventory.md.
+Implement phase 1b following docs/specs/phase-1b-v2-updates.md.
 First read CLAUDE.md, docs/CONTEXT.md, docs/specs/00-overview.md and docs/specs/01-data-model.md.
 Write a short plan before coding. Do not build anything from later phases.
 Finish by checking the "Definition of done" list, running all tests, and updating docs/PROGRESS.md.

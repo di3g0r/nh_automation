@@ -1,6 +1,6 @@
 # Phase 6 — Production Dashboard
 
-> Prerequisites: phase 3 done (phase 4/5 recommended for real PLC data). Read `00-overview.md` and `01-data-model.md` first.
+> Prerequisites: phase 3 done (phase 4 recommended for real PLC data). Read `00-overview.md` and `01-data-model.md` first.
 > Goal: daily production visible by machine, operator and product.
 
 ## Requirements
@@ -12,7 +12,7 @@
   - Liters per day over the selected range (line).
   - Differences (faltante/excedente) per order/machine over time.
   - Machine utilization: time running vs paused vs idle per machine per day.
-- Filters: site, machine, operator, product, client.
+- Filters: site, machine, operator, product, client, razón social, order type.
 - Export to XLSX/CSV for any table.
 - Auto-refresh every 60 s when viewing today.
 
