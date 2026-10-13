@@ -6,9 +6,9 @@ Build **one phase per Claude Code session**, in order. Each phase delivers somet
 |---|---|---|---|
 | 0 | `phase-0-foundation.md` | Server skeleton running; login and user management | Done |
 | 1 | `phase-1-catalogs-inventory.md` | Products, packaging, machines; import; stock | Done |
-| 1b | `phase-1b-v2-updates.md` | Razones sociales, cancel permission, expiry setting (v2 decisions applied to built code) | **Next** |
-| 2 | `phase-2-work-orders.md` | Digital work orders with several source products; overselling blocked; printing | |
-| 3 | `phase-3-assignments-operator.md` | Full process without paper (manual operator controls) | |
+| 1b | `phase-1b-v2-updates.md` | Razones sociales, Production manager role, permissions, T-/R- sequences, settings (decisions applied to built code) | **Next** |
+| 2 | `phase-2-work-orders.md` | Digital work orders (Producto base / Producto terminado); overselling blocked; comments; printing | |
+| 3 | `phase-3-assignments-operator.md` | Production manager assigns machines, pause/resume, operator station, closing — full process without paper | |
 | 4 | `phase-4-plc-database-interface.md` | PLCs read pending orders and write events in the database; document for the PLC programmer | |
 | 6 | `phase-6-dashboard.md` | Production dashboard | |
 

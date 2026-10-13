@@ -3,6 +3,7 @@
 > Status: v2 — 2026-10-09 (v1: 2026-10-06). Shared by every phase. Read `docs/CONTEXT.md` first.
 > v2 changes: razones sociales, supervisor can cancel, PLC talks to the database (no PLC HTTP API), no VPN, backups kept but optional, open items updated.
 > v2.1: phase 4 slimmed down (no simulator, no troubleshooting page); phase 5 removed and merged into phase 4's handover checklist.
+> v3 (2026-10-13): Production manager role replaces supervisor; new permission set; Producto base / Producto terminado; T-/R- numbering; pause; open items updated.
 
 ## 1. Document map
 
@@ -12,9 +13,9 @@
 | `01-data-model.md` | Tables, statuses, business rules — the single source of truth for the database | |
 | `phase-0-foundation.md` | Repo, Docker, database, auth, users, audit log, UI shell | Done |
 | `phase-1-catalogs-inventory.md` | Products, packaging, clients, sites, machines, imports, stock | Done |
-| `phase-1b-v2-updates.md` | Apply the v2 decisions to code already built (razones sociales, permissions, settings) | **Next** |
-| `phase-2-work-orders.md` | Work orders (several source products), reservations, overselling block, printing | |
-| `phase-3-assignments-operator.md` | Assignments, machine board, operator station, completion, verification | |
+| `phase-1b-v2-updates.md` | Apply the v2/v3 decisions to code already built (razones sociales, Production manager role, permissions, sequences, settings) | **Next** |
+| `phase-2-work-orders.md` | Work orders (one or more base products), numbering, reservations, overselling block, comments, printing | |
+| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, pause/resume, operator station, completion, closing | |
 | `phase-4-plc-database-interface.md` | Database views and event table the PLCs use; event processing; document and handover checklist for the PLC programmer | |
 | `phase-6-dashboard.md` | Production dashboard | |
 
@@ -68,23 +69,24 @@ CLAUDE.md
 
 ## 4. Roles and permissions
 
-Roles: **master_admin** (director), **admin** (office), **supervisor** (warehouse) **[OPEN-10]**, **operator** (machines).
+Roles: **master_admin** (director), **admin** (office), **production_manager** (*Jefe de producción*, the link between office and operators), **operator** (machines). There is **no supervisor role** (v3).
 
-| Permission | Master admin | Admin | Supervisor | Operator |
+| Permission | Master admin | Admin | Production manager | Operator |
 |---|---|---|---|---|
 | `users.manage` | ✅ | ❌ | ❌ | ❌ |
 | `catalogs.manage` (products, packaging, razones sociales, clients, sites, machines) | ✅ | ✅ | ❌ | ❌ |
-| `sequences.manage` (next operation number per razón social) | ✅ | ❌ | ❌ | ❌ |
+| `sequences.manage` (next Trabajo / Retrabajo number) | ✅ | ❌ | ❌ | ❌ |
 | `inventory.view` | ✅ | ✅ | ✅ | ❌ |
-| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ✅ | ❌ |
-| `orders.view` | ✅ | ✅ | ✅ | ❌ (only own assignments) |
-| `orders.edit` (create/edit/delete) | ✅ | ✅ | ❌ | ❌ |
-| `orders.approve` | ✅ | ✅ | ❌ | ❌ |
-| `orders.assign` | ✅ | ✅ | ✅ | ❌ |
-| `orders.traceability` (lot, expiry) | ✅ | ✅ | ✅ | ❌ |
-| `orders.verify` | ✅ | ❌ | ✅ | ❌ |
-| `orders.cancel` (cancel before start, close short after) | ✅ | ✅ | ✅ | ❌ |
-| `assignments.work_own` (start/pause/complete manually, checklist, materials) | ✅ | ✅ | ✅ | ✅ (own) |
+| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ❌ | ❌ |
+| `orders.view` (all orders) | ✅ | ✅ | ✅ | ❌ (only orders on the machine they work at) |
+| `orders.edit` (create; edit and delete before production starts) | ✅ | ✅ | ✅ | ❌ |
+| `orders.comment` (add comments at any time) | ✅ | ✅ | ✅ | ❌ |
+| `orders.assign` (assign/reassign machines before production starts) | ✅ | ❌ | ✅ | ❌ |
+| `orders.expiry` (enter expiry date) | ✅ | ❌ | ✅ | ❌ |
+| `orders.traceability` (lots, checklist, actual materials and labels — who is recorded) | ✅ | ✅ | ✅ | ✅ |
+| `production.control` (start, pause, resume, complete manually) | ✅ | ✅ | ✅ | ✅ |
+| `orders.cancel` (only before production starts) | ✅ | ✅ | ✅ | ❌ |
+| `orders.close` (approve and close completed orders) | ✅ | ❌ | ✅ | ❌ |
 | `machines.board` | ✅ | ✅ | ✅ | ❌ |
 | `machines.plc_credentials` (create/rotate PLC database logins) | ✅ | ❌ | ❌ | ❌ |
 | `audit.view`, `settings.manage` | ✅ | ❌ | ❌ | ❌ |
@@ -104,8 +106,8 @@ The role → permissions map lives in **one module**. Endpoints check permission
 
 - All text in Spanish, kept in one translation/strings module (no hard-coded text scattered in components).
 - Dates `dd/mm/aaaa`, 24-hour time, America/Mazatlan. Liters as `1,000.00 L`.
-- Office navigation: **Inicio, Órdenes, Máquinas, Inventario, Catálogos** (Productos, Materiales de empaque, Razones sociales, Clientes, Sitios, Máquinas), **Usuarios, Bitácora, Configuración**. Items hidden when the user lacks permission.
-- Operators land on **Estación de operador** (touch-friendly, large buttons).
+- Office navigation: **Inicio, Producción, Órdenes, Máquinas, Inventario, Catálogos** (Productos, Materiales de empaque, Razones sociales, Clientes, Sitios, Máquinas), **Usuarios, Bitácora, Configuración**. Items hidden when the user lacks permission.
+- Operators land on **Estación de operador** (touch-friendly, large buttons). The Production manager lands on **Producción** (new orders to assign, completed orders to close).
 - Consistent color-coded status badges. Clear Spanish error messages from the API.
 - Works on Chrome/Edge (PC) and Chrome on Android tablets; responsive down to 360 px width.
 
@@ -143,20 +145,22 @@ Numbering matches `CONTEXT.md` §13. Implement the default; mark code with `TODO
 | # | Item | Status / default |
 |---|---|---|
 | OPEN-1 | Meaning of *Retrabajo* | **Resolved:** two kinds (previous order / own stock) |
-| OPEN-2 | Operation number generation | **Resolved:** separate sequence per razón social + its code |
+| OPEN-2 | Operation number generation | **Resolved (v3):** `T-<n> <RS>` / `R-<n> <RS>`; one sequence for Trabajo and one for Retrabajo, shared across razones sociales, starting at 1 |
 | OPEN-3 | "Reen #" codes | Open — kept in free-text comments |
-| OPEN-4 | Lot format; expiry display format | Open — free text lot; expiry stored as a date, shown `MM/AAAA`. Expiry rules resolved |
+| OPEN-4 | Lot format; expiry display format | Open — free text lot; expiry stored as a date, shown `MM/AAAA`. Expiry rules resolved (v3) |
 | OPEN-5 | Product code structure | Open — free text, unique |
 | OPEN-6 | PLC brand/model | Open — only to confirm direct DB access vs a small HTTP gateway |
 | OPEN-7 | System → PLC mechanism | **Resolved:** PLC polls the database |
 | OPEN-8 | Server down during production | **Resolved:** nothing is done |
 | OPEN-9 | Operator device | Open — responsive web, tablet-first |
-| OPEN-10 | Supervisor role | Open — separate role |
-| OPEN-11 | Cancellation rules | **Resolved:** all except operators; only before *En proceso* |
+| OPEN-10 | Supervisor role | **Resolved (v3):** no supervisor; replaced by the Production manager |
+| OPEN-11 | Cancellation rules | **Resolved:** all except operators; only before production starts |
 | OPEN-12 | Label/barcode printing | Open — printable order with barcode |
 | OPEN-13 | VPN | **Resolved:** no VPN, LAN only |
 | OPEN-14 | Other sites | Open — stock per site; one default site |
 | OPEN-15 | Volume and users | Open — ≈6 machines, a few hundred orders/day |
 | OPEN-16 | Razones sociales 3 and 4 | Open — placeholders `RS3`, `RS4` |
-| OPEN-17 | Current operation numbers | Open — each sequence's next number is editable by the master admin |
+| OPEN-17 | Current operation numbers | **Resolved (v3):** sequences start at 1 (master admin can still change the next number) |
+| OPEN-19 | Acceptable difference range | Open — settings `difference_tolerance_liters` and `difference_tolerance_percent`; outside the range is highlighted, never blocks closing |
+| OPEN-20 | Moving a paused remainder to another machine | Open — not supported; a paused assignment resumes on the same machine |
 | OPEN-18 | External catalog DB | Open — structure, access, one-time import vs ongoing sync |

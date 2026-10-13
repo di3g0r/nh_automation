@@ -1,6 +1,6 @@
 # CLAUDE.md — instructions for Claude Code
 
-This repository is the **Work Order and Production Tracking System** for a liquid fertilizer plant (ECOINDUSTRIAL PACÍFICO). It replaces paper work orders, tracks inventory with reservations, assigns orders to machines and operators, and receives production data that the machine PLCs write directly to the database (PLC programming itself is out of scope).
+This repository is the **Work Order and Production Tracking System** for a liquid fertilizer plant (ECOINDUSTRIAL PACÍFICO). It replaces paper work orders, tracks inventory with reservations, lets a Production manager assign orders to machines, and receives production data that the machine PLCs write directly to the database (PLC programming itself is out of scope).
 
 ## Read before working
 

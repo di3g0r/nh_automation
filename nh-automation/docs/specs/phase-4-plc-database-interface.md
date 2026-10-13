@@ -1,6 +1,7 @@
 # Phase 4 — PLC Database Interface
 
 > Status: v2.1 — 2026-10-09 (replaces `phase-4-plc-api-simulator.md` and the former phase 5). Prerequisites: phases 0–3 done. Read `00-overview.md` and `01-data-model.md` (v2) first.
+> v3 (2026-10-13): new names (base/finished product), assignment statuses `pending/running/paused`, only orders with expiry are visible, completed orders go to the Production manager for closing.
 > Goal: the PLCs can read their pending assignments from the database and write their actions to it, and the system applies those actions as if the operator had pressed the buttons.
 
 ## Context
@@ -11,14 +12,14 @@ Design principle: the PLC never touches business tables. It **reads a view** and
 
 ## Scope
 
-**In:** PLC database roles and credentials, the `plc_pending_assignments` and `plc_assignment_sources` views, the `plc_events` inbox with trigger, the event processor, the machine's last PLC contact, the database port configuration, the interface document for the PLC programmer, the handover checklist.
+**In:** PLC database roles and credentials, the `plc_pending_assignments` and `plc_assignment_base_products` views, the `plc_events` inbox with trigger, the event processor, the machine's last PLC contact, the database port configuration, the interface document for the PLC programmer, the handover checklist.
 **Out:** PLC programming; PLC simulator; a PLC events troubleshooting page; offline/outage handling (OPEN-8: nothing is done); an HTTP gateway (only if the real PLC cannot connect to PostgreSQL — see the last section).
 
 ## Database objects (migration)
 
 ### Roles and credentials
 - Group role `plc_machine` (NOLOGIN) with:
-  - `SELECT` on `plc_pending_assignments` and `plc_assignment_sources`.
+  - `SELECT` on `plc_pending_assignments` and `plc_assignment_base_products`.
   - `INSERT` on `plc_events` (only columns `assignment_id, event, liters, seq, error_code, message, plc_timestamp`) and `USAGE` on its sequence.
   - **No** access to anything else.
 - One login role per machine, e.g. `plc_m01`, member of `plc_machine`; the name is stored in `machines.plc_db_username`.
@@ -26,8 +27,8 @@ Design principle: the PLC never touches business tables. It **reads a view** and
 - If the app's DB user cannot create roles, use a small privileged script in `deploy/` instead; record the choice in DECISIONS.
 
 ### Views (each PLC sees only its own machine)
-- `plc_pending_assignments`: assignments of the machine whose `plc_db_username = current_user`, in `assigned`, `in_progress` or `paused`, ordered by `queue_position`. Columns: `assignment_id`, `operation_number`, `queue_position`, `status`, `result_code`, `result_name`, `result_presentation`, `planned_liters`, `actual_liters`, `operator_name`, `comments`.
-- `plc_assignment_sources`: each source product of those assignments: `assignment_id`, `position`, `source_code`, `source_name`, `liters` (that source's share: source liters × planned liters ÷ order result liters).
+- `plc_pending_assignments`: assignments of the machine whose `plc_db_username = current_user`, in `pending`, `running` or `paused`, of orders that have an expiry date (status `assigned`, `in_progress` or `paused`), ordered by `queue_position`. Columns: `assignment_id`, `operation_number`, `order_type`, `queue_position`, `status`, `finished_code`, `finished_name`, `finished_presentation`, `planned_liters`, `actual_liters`, `expiry_date`, `comments` (joined, newest first).
+- `plc_assignment_base_products`: each base product of those assignments: `assignment_id`, `position`, `base_code`, `base_name`, `liters` (that product's share: its liters × planned liters ÷ order finished liters).
 - Views are `security_barrier` and owned by the app user, so PLC roles need no rights on base tables.
 
 ### `plc_events` inbox
@@ -43,13 +44,13 @@ Columns per `01-data-model.md` §2.2. A `BEFORE INSERT` trigger:
 - Runs inside the backend (background task in the `api` container); record the choice in DECISIONS. Wakes on `LISTEN plc_events` and also polls every 5 s as a fallback.
 - Processes unprocessed events **in `received_at` order per machine**, each in its own transaction; sets `processed_at` and `result`.
 - Mapping (actor = the machine, `source="plc"`):
-  - `start` → start the assignment (must be the machine's first in queue and `assigned`).
+  - `start` → start the assignment (must be the machine's first in queue and `pending`, with no other assignment running or paused on the machine).
   - `progress` → set `actual_liters` if greater than the current value (never decreases).
   - `pause` / `resume` → pause / resume.
   - `complete` → complete with `liters` as final actual liters; same stock movements as manual completion (BR-8).
   - `error` → `assignment_events` row of type `error` with code and message; shown on the machine board and in the order history; no status change.
 - Duplicate (machine, seq) → `duplicate`, not applied (BR-13). Invalid for the current state → `rejected` with a reason code (`NOT_ON_MACHINE`, `INVALID_TRANSITION`, `NOT_FIRST_IN_QUEUE`, `BAD_PAYLOAD`). Rejected events are logged at warning level and keep their reason in `plc_events`, where a developer or the IT person can query them.
-- Completion by the PLC does not require the checklist and actual packaging first; the operator fills them afterwards in the operator station, and the order cannot be **verified** until both are filled.
+- Completion by the PLC does not require the checklist, lot or actual packaging first; they are filled afterwards (by the Production manager or anyone, recorded). When all of an order's machines complete, the order becomes *Completada* and appears in the Production manager's **Por cerrar** list.
 - Manual and PLC actions can coexist (e.g. the operator completes manually if the PLC fails); the last source is recorded. Events for completed or cancelled assignments are rejected.
 
 ## Web app changes
@@ -64,7 +65,7 @@ Columns per `01-data-model.md` §2.2. A `BEFORE INSERT` trigger:
 ## Document for the PLC programmer
 `docs/PLC_INTERFACE.md`, in **Spanish**, self-contained:
 - Connection data (host, port, database, auth method; per-machine user/password delivered separately).
-- Recommended loop: every N seconds read `plc_pending_assignments` → if the first row is `assigned`, alert the operator → when the operator starts, insert `start` → insert `progress` every 5–10 s with cumulative liters → `pause`/`resume` as needed → `complete` with final liters.
+- Recommended loop: every N seconds read `plc_pending_assignments` → if the first row is `pending`, alert the operator → when the operator starts, insert `start` → insert `progress` every 5–10 s with cumulative liters → `pause`/`resume` as needed → `complete` with final liters.
 - Column lists, allowed events, example `SELECT` and `INSERT` statements, the meaning of `seq` and why liters are cumulative, what happens to duplicates and rejected events.
 - Questions for the PLC programmer (see handover checklist).
 
@@ -84,10 +85,11 @@ Run against real PostgreSQL, inserting events while logged in as test PLC roles 
 - Processor: happy path; duplicates; out-of-order progress doesn't decrease liters; `start` on a non-first assignment rejected; PLC completion produces exactly the same stock movements as manual completion.
 
 ## Acceptance scenarios
-1. Order (1,000 L) split 500 L on M01 and 500 L on M02. Logged in as `plc_m01` and `plc_m02`, each sees only its own assignment; inserting `start`, `progress` and `complete` (500 L and 495 L) makes the order *Completada* with *Faltante 5.00 L*; stock moves as in phase 3.
+1. Order (1,000 L) split 500 L on M01 and 500 L on M02. Logged in as `plc_m01` and `plc_m02`, each sees only its own assignment; inserting `start`, `progress` and `complete` (500 L and 495 L) makes the order *Completada* with *Faltante 5.00 L* and puts it in *Por cerrar*; stock moves as in phase 3.
 2. Inserting the same event twice (same `seq`) doesn't change totals.
 3. `plc_m01` running `SELECT * FROM work_orders` fails.
-4. After a PLC `start`, the operator completes the assignment manually; history shows `plc` and `manual` events.
+4. After a PLC `start` and `pause` (end of shift), the order shows *Pausada*; a PLC `resume` puts it back *En proceso*; the operator completes manually; history shows `plc` and `manual` events.
+5. An order without expiry date does not appear in the PLC view even if machines were chosen.
 
 ## Definition of done
 - [ ] Scenarios pass on the dev stack with real PostgreSQL.
