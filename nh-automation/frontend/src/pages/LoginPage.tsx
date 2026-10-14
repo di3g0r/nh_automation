@@ -12,17 +12,17 @@ import {
 } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { strings } from "../i18n/strings";
+import { landingPath } from "../utils/landing";
 
 type Mode = "password" | "pin";
 
 export function LoginPage() {
   const { user, loginWithPassword, loginWithPin } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
 
   const [mode, setMode] = useState<Mode>("password");
@@ -33,7 +33,7 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
 
   if (user) {
-    const from = (location.state as { from?: string } | null)?.from ?? "/";
+    const from = (location.state as { from?: string } | null)?.from ?? landingPath(user.role);
     return <Navigate to={from} replace />;
   }
 
@@ -47,7 +47,7 @@ export function LoginPage() {
       } else {
         await loginWithPin(username, pin);
       }
-      navigate("/", { replace: true });
+      // The redirect above sends the user to their landing page once `user` is set.
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);

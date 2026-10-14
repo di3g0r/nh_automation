@@ -10,18 +10,21 @@ import {
   MachinesPage,
   PackagingPage,
   ProductsPage,
+  RazonesSocialesPage,
   SitesPage,
 } from "./pages/catalogs/CatalogPages";
 import { HomePage } from "./pages/HomePage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OperatorStationPage } from "./pages/OperatorStationPage";
+import { ProductionPage } from "./pages/ProductionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UsersPage } from "./pages/UsersPage";
 
 const CATALOG_ROUTES = [
   { path: "/catalogos/productos", element: <ProductsPage /> },
   { path: "/catalogos/materiales", element: <PackagingPage /> },
+  { path: "/catalogos/razones-sociales", element: <RazonesSocialesPage /> },
   { path: "/catalogos/clientes", element: <ClientsPage /> },
   { path: "/catalogos/sitios", element: <SitesPage /> },
   { path: "/catalogos/maquinas", element: <MachinesPage /> },
@@ -48,6 +51,14 @@ export function App() {
       >
         <Route index path="/" element={<IndexRoute />} />
         <Route path="/operador" element={<OperatorStationPage />} />
+        <Route
+          path="/produccion"
+          element={
+            <RouteGuard permission="orders.assign">
+              <ProductionPage />
+            </RouteGuard>
+          }
+        />
         <Route path="/cambiar-contrasena" element={<ChangePasswordPage />} />
         <Route
           path="/inventario"

@@ -1,4 +1,5 @@
-"""Catalog tables (data model §2, phase 1): sites, clients, products, packaging, machines.
+"""Catalog tables (data model §2, phases 1/1b): sites, clients, razones sociales,
+products, packaging, machines.
 
 Catalog rows are never hard-deleted (FR-CAT-6, NFR-6): they are deactivated
 with `is_active = False` and keep displaying in older records.
@@ -36,6 +37,18 @@ class Client(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class RazonSocial(Base, TimestampMixin):
+    """Legal entity a product belongs to; its code is the operation-number suffix."""
+
+    __tablename__ = "razones_sociales"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Uppercase letters/digits, 1-6 chars (enforced in schemas).
+    code: Mapped[str] = mapped_column(String(6), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class Product(Base, TimestampMixin):
     __tablename__ = "products"
 
@@ -46,7 +59,14 @@ class Product(Base, TimestampMixin):
     provider: Mapped[str] = mapped_column(String(200), nullable=False)
     presentation: Mapped[str] = mapped_column(String(64), nullable=False)
     container_liters: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Nullable in the DB for imported rows; required by the product form (and,
+    # from phase 2, to use the product in an order).
+    razon_social_id: Mapped[int | None] = mapped_column(
+        ForeignKey("razones_sociales.id"), nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    razon_social: Mapped[RazonSocial | None] = relationship(lazy="joined")
 
 
 class PackagingItem(Base, TimestampMixin):

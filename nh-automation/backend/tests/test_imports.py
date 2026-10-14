@@ -302,6 +302,6 @@ def test_external_db_query_error(client, db_session, base_catalogs, external_db)
 
 
 def test_import_requires_catalogs_manage(client, db_session, base_catalogs):
-    headers = login_as(client, db_session, "supervisor")
+    headers = login_as(client, db_session, "production_manager")
     resp = _post(client, headers, "preview", content=VALID_CSV.encode())
     assert resp.status_code == 403

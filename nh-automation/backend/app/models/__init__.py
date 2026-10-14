@@ -1,5 +1,6 @@
 from app.models.audit_log import AuditLog
-from app.models.catalogs import Client, Machine, PackagingItem, Product, Site
+from app.models.catalogs import Client, Machine, PackagingItem, Product, RazonSocial, Site
+from app.models.sequences import OrderSequence
 from app.models.session import UserSession
 from app.models.settings import Setting
 from app.models.stock import StockLevel, StockMovement
@@ -13,6 +14,8 @@ __all__ = [
     "Site",
     "Client",
     "Product",
+    "RazonSocial",
+    "OrderSequence",
     "PackagingItem",
     "Machine",
     "StockLevel",

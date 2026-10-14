@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
@@ -9,6 +10,16 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 PackagingCategory = Literal["envase", "caja", "bolsa", "etiqueta", "otro"]
+
+RAZON_SOCIAL_CODE = re.compile(r"^[A-Z0-9]{1,6}$")
+
+
+def normalize_razon_social_code(v: str) -> str:
+    """Uppercase, then require 1-6 letters/digits (it becomes the order-number suffix)."""
+    code = v.strip().upper()
+    if not RAZON_SOCIAL_CODE.match(code):
+        raise ValueError("El código debe tener de 1 a 6 letras mayúsculas o dígitos, sin espacios.")
+    return code
 
 
 def _strip(v: str | None) -> str | None:
@@ -71,6 +82,36 @@ class ClientUpdate(_Stripped):
     is_active: bool | None = None
 
 
+# Razones sociales --------------------------------------------------------------
+
+
+class RazonSocialOut(_Out):
+    code: str
+    name: str
+
+
+class RazonSocialCreate(_Stripped):
+    code: str = Field(min_length=1, max_length=6)
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("code")
+    @classmethod
+    def _code(cls, v: str) -> str:
+        return normalize_razon_social_code(v)
+
+
+class RazonSocialUpdate(_Stripped):
+    # Phase 2 will block changing a code already used by an order.
+    code: str | None = Field(default=None, min_length=1, max_length=6)
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    is_active: bool | None = None
+
+    @field_validator("code")
+    @classmethod
+    def _code(cls, v: str | None) -> str | None:
+        return normalize_razon_social_code(v) if v is not None else None
+
+
 # Products --------------------------------------------------------------------
 
 
@@ -80,6 +121,27 @@ class ProductOut(_Out):
     provider: str
     presentation: str
     container_liters: Decimal | None
+    razon_social_id: int | None
+    razon_social_code: str | None
+    razon_social_name: str | None
+
+    @classmethod
+    def from_model(cls, p) -> ProductOut:  # type: ignore[no-untyped-def]
+        rs = p.razon_social
+        return cls(
+            id=p.id,
+            code=p.code,
+            name=p.name,
+            provider=p.provider,
+            presentation=p.presentation,
+            container_liters=p.container_liters,
+            razon_social_id=p.razon_social_id,
+            razon_social_code=rs.code if rs else None,
+            razon_social_name=rs.name if rs else None,
+            is_active=p.is_active,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+        )
 
 
 class ProductCreate(_Stripped):
@@ -88,6 +150,7 @@ class ProductCreate(_Stripped):
     provider: str = Field(min_length=1, max_length=200)
     presentation: str = Field(min_length=1, max_length=64)
     container_liters: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    razon_social_id: int
 
 
 class ProductUpdate(_Stripped):
@@ -96,6 +159,8 @@ class ProductUpdate(_Stripped):
     provider: str | None = Field(default=None, min_length=1, max_length=200)
     presentation: str | None = Field(default=None, min_length=1, max_length=64)
     container_liters: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    # Omit to keep the current value; an explicit null is rejected (required).
+    razon_social_id: int | None = None
     is_active: bool | None = None
 
 

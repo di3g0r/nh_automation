@@ -67,8 +67,9 @@ def seed_settings() -> None:
 
 @cli.command("seed-catalogs")
 def seed_catalogs() -> None:
-    """Ensure the base site, clients and 14 packaging items exist (idempotent).
-    The phase-1 migration already inserts them; this is for repaired/old DBs."""
+    """Ensure the base site, razones sociales, order sequences and 14 packaging
+    items exist (idempotent). The migrations already insert them; this is for
+    repaired/old DBs."""
     db = SessionLocal()
     try:
         seed_service.ensure_base_catalogs(db)
@@ -79,7 +80,7 @@ def seed_catalogs() -> None:
 
 @cli.command("seed-dev")
 def seed_dev() -> None:
-    """DEV ONLY: sample products, machines M01-M06 and one user per role."""
+    """DEV ONLY: sample products and clients, machines M01-M06, one user per role."""
     from app.core.config import get_settings
 
     if get_settings().is_production:

@@ -1,10 +1,17 @@
-import { Badge, Button, Group, Modal, Select, Stack, Text } from "@mantine/core";
+import { Badge, Button, Group, Modal, Select, Stack, Text, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconFileImport } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { clientsApi, machinesApi, packagingApi, productsApi, sitesApi } from "../../api/catalogs";
+import {
+  clientsApi,
+  machinesApi,
+  packagingApi,
+  productsApi,
+  razonesSocialesApi,
+  sitesApi,
+} from "../../api/catalogs";
 import type {
   Client,
   ImportKind,
@@ -13,6 +20,7 @@ import type {
   PackagingCategory,
   PackagingItem,
   Product,
+  RazonSocial,
   Site,
 } from "../../api/types";
 import { CatalogPage } from "../../components/catalogs/CatalogPage";
@@ -54,10 +62,30 @@ function ImportButton({ kind, queryKey }: { kind: ImportKind; queryKey: string }
   );
 }
 
+/** Razones sociales for selects; inactive ones stay listed (old records) but can't be picked. */
+function useRazonSocialOptions() {
+  const { data } = useQuery({
+    queryKey: ["razones-sociales", "all-for-select"],
+    queryFn: () => razonesSocialesApi.list({ page_size: 500 }),
+  });
+  return useMemo(() => {
+    const items: RazonSocial[] = data?.items ?? [];
+    return items.map((rs) => ({
+      value: String(rs.id),
+      label: `${rs.code} — ${rs.name}${rs.is_active ? "" : ` ${t.machines.inactivoSufijo}`}`,
+      disabled: !rs.is_active,
+    }));
+  }, [data]);
+}
+
+const WITHOUT_RS = "none";
+
 // Productos ---------------------------------------------------------------------
 
 export function ProductsPage() {
   const p = t.products;
+  const rsOptions = useRazonSocialOptions();
+  const [rsFilter, setRsFilter] = useState<string | null>(null);
   const config: CatalogConfig<Product> = {
     queryKey: "products",
     title: p.title,
@@ -67,9 +95,39 @@ export function ProductsPage() {
     create: productsApi.create,
     update: productsApi.update,
     toolbar: <ImportButton kind="products" queryKey="products" />,
+    filters: (
+      <Select
+        placeholder={p.todasRazones}
+        data={[
+          { value: WITHOUT_RS, label: p.sinRazonSocial },
+          ...rsOptions.map((o) => ({ value: o.value, label: o.label })),
+        ]}
+        value={rsFilter}
+        onChange={setRsFilter}
+        clearable
+        w={260}
+      />
+    ),
+    extraParams: {
+      razon_social_id: rsFilter && rsFilter !== WITHOUT_RS ? Number(rsFilter) : undefined,
+      without_razon_social: rsFilter === WITHOUT_RS || undefined,
+    },
     columns: [
       { label: p.code, render: (r) => r.code },
       { label: p.name, render: (r) => r.name },
+      {
+        label: p.razon_social,
+        render: (r) =>
+          r.razon_social_code ? (
+            <Tooltip label={r.razon_social_name}>
+              <span>{r.razon_social_code}</span>
+            </Tooltip>
+          ) : (
+            <Badge color="orange" variant="light">
+              {p.sinRazonSocial}
+            </Badge>
+          ),
+      },
       { label: p.provider, render: (r) => r.provider },
       { label: p.presentation, render: (r) => r.presentation },
       {
@@ -80,6 +138,14 @@ export function ProductsPage() {
     fields: [
       { name: "code", label: p.code, type: "text", required: true },
       { name: "name", label: p.name, type: "text", required: true },
+      {
+        name: "razon_social_id",
+        label: p.razon_social,
+        type: "select",
+        required: true,
+        asNumber: true,
+        options: rsOptions,
+      },
       { name: "provider", label: p.provider, type: "text", required: true },
       {
         name: "presentation",
@@ -89,6 +155,30 @@ export function ProductsPage() {
         description: p.presentationHint,
       },
       { name: "container_liters", label: p.container_liters, type: "decimal" },
+    ],
+  };
+  return <CatalogPage config={config} />;
+}
+
+// Razones sociales ----------------------------------------------------------------
+
+export function RazonesSocialesPage() {
+  const r = t.razonesSociales;
+  const config: CatalogConfig<RazonSocial> = {
+    queryKey: "razones-sociales",
+    title: r.title,
+    newLabel: r.nuevo,
+    searchPlaceholder: r.buscar,
+    list: razonesSocialesApi.list,
+    create: razonesSocialesApi.create,
+    update: razonesSocialesApi.update,
+    columns: [
+      { label: r.code, render: (row) => row.code },
+      { label: r.name, render: (row) => row.name },
+    ],
+    fields: [
+      { name: "code", label: r.code, type: "text", required: true, description: r.codeHint },
+      { name: "name", label: r.name, type: "text", required: true },
     ],
   };
   return <CatalogPage config={config} />;

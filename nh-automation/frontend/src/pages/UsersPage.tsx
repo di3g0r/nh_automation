@@ -27,7 +27,7 @@ import { formatDateTime } from "../utils/datetime";
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "master_admin", label: strings.users.roles.master_admin },
   { value: "admin", label: strings.users.roles.admin },
-  { value: "supervisor", label: strings.users.roles.supervisor },
+  { value: "production_manager", label: strings.users.roles.production_manager },
   { value: "operator", label: strings.users.roles.operator },
 ];
 

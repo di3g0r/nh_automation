@@ -1,6 +1,15 @@
 import { api } from "./client";
 import { toQuery } from "./types";
-import type { Client, Machine, MachineWithKey, PackagingItem, Page, Product, Site } from "./types";
+import type {
+  Client,
+  Machine,
+  MachineWithKey,
+  PackagingItem,
+  Page,
+  Product,
+  RazonSocial,
+  Site,
+} from "./types";
 
 export interface ListParams {
   search?: string;
@@ -8,6 +17,8 @@ export interface ListParams {
   page?: number;
   page_size?: number;
   category?: string;
+  razon_social_id?: number;
+  without_razon_social?: boolean;
 }
 
 /** CRUD for one catalog resource. Deactivation is PATCH {is_active: false}. */
@@ -22,6 +33,7 @@ function resource<T, TCreate = Partial<T>, TCreated = T>(path: string) {
 
 export const productsApi = resource<Product>("/products");
 export const packagingApi = resource<PackagingItem>("/packaging-items");
+export const razonesSocialesApi = resource<RazonSocial>("/razones-sociales");
 export const clientsApi = resource<Client>("/clients");
 export const sitesApi = resource<Site>("/sites");
 export const machinesApi = {

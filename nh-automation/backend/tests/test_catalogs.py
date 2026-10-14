@@ -17,18 +17,24 @@ PRODUCT = {
 }
 
 
+def _product(rs_id: int, **extra: object) -> dict:
+    return PRODUCT | {"razon_social_id": rs_id} | extra
+
+
 def test_seed_data_present(client, db_session, base_catalogs):
     login_as(client, db_session, "admin")
     sites = client.get(f"{API}/sites").json()
     assert [s["name"] for s in sites["items"]] == ["ECOINDUSTRIAL PACÍFICO"]
     assert sites["items"][0]["is_default"] is True
-    assert client.get(f"{API}/clients").json()["total"] == 2
+    assert client.get(f"{API}/clients").json()["total"] == 0  # NB/ANB are razones sociales
+    razones = client.get(f"{API}/razones-sociales").json()
+    assert [r["code"] for r in razones["items"]] == ["ANB", "NB", "RS3", "RS4"]
     assert client.get(f"{API}/packaging-items").json()["total"] == 14
 
 
-def test_create_and_update_product(client, db_session):
+def test_create_and_update_product(client, db_session, nb_id):
     headers = login_as(client, db_session, "admin")
-    resp = client.post(f"{API}/products", json=PRODUCT, headers=headers)
+    resp = client.post(f"{API}/products", json=_product(nb_id), headers=headers)
     assert resp.status_code == 201
     body = resp.json()
     assert body["container_liters"] == "20.00"
@@ -48,19 +54,19 @@ def test_create_and_update_product(client, db_session):
     assert resp.json()["container_liters"] is None
 
 
-def test_product_code_must_be_unique(client, db_session):
+def test_product_code_must_be_unique(client, db_session, nb_id):
     headers = login_as(client, db_session, "admin")
-    assert client.post(f"{API}/products", json=PRODUCT, headers=headers).status_code == 201
-    resp = client.post(f"{API}/products", json=PRODUCT, headers=headers)
+    assert client.post(f"{API}/products", json=_product(nb_id), headers=headers).status_code == 201
+    resp = client.post(f"{API}/products", json=_product(nb_id), headers=headers)
     assert resp.status_code == 409
     assert resp.json()["error"]["code"] == "DUPLICATE_CODE"
 
 
-def test_update_to_existing_code_rejected(client, db_session):
+def test_update_to_existing_code_rejected(client, db_session, nb_id):
     headers = login_as(client, db_session, "admin")
-    client.post(f"{API}/products", json=PRODUCT, headers=headers)
+    client.post(f"{API}/products", json=_product(nb_id), headers=headers)
     other = client.post(
-        f"{API}/products", json=PRODUCT | {"code": "OTHER"}, headers=headers
+        f"{API}/products", json=_product(nb_id, code="OTHER"), headers=headers
     ).json()
     resp = client.patch(
         f"{API}/products/{other['id']}", json={"code": PRODUCT["code"]}, headers=headers
@@ -76,7 +82,8 @@ def test_packaging_and_client_codes_unique(client, db_session, base_catalogs):
         headers=headers,
     )
     assert resp.status_code == 409
-    resp = client.post(f"{API}/clients", json={"name": "Otro", "code": "NB"}, headers=headers)
+    client.post(f"{API}/clients", json={"name": "Uno", "code": "C1"}, headers=headers)
+    resp = client.post(f"{API}/clients", json={"name": "Otro", "code": "C1"}, headers=headers)
     assert resp.status_code == 409
 
 
@@ -90,9 +97,9 @@ def test_packaging_category_validated(client, db_session):
     assert resp.status_code == 422
 
 
-def test_no_delete_endpoint_deactivate_instead(client, db_session):
+def test_no_delete_endpoint_deactivate_instead(client, db_session, nb_id):
     headers = login_as(client, db_session, "admin")
-    product = client.post(f"{API}/products", json=PRODUCT, headers=headers).json()
+    product = client.post(f"{API}/products", json=_product(nb_id), headers=headers).json()
 
     assert client.delete(f"{API}/products/{product['id']}", headers=headers).status_code == 405
 

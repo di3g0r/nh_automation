@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 ImportKind = Literal["products", "packaging-items"]
-FieldKind = Literal["text", "decimal", "int", "category"]
+FieldKind = Literal["text", "decimal", "int", "category", "razon_social"]
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,11 @@ FIELDS: dict[ImportKind, tuple[FieldSpec, ...]] = {
             "decimal",
             False,
             ("litros_por_envase", "litros_envase", "container_liters", "capacidad_litros"),
+        ),
+        # Holds the razón social *code* (NB, ANB...). "Razón social" normalizes
+        # to razon_social. Optional: empty imports the product without one.
+        FieldSpec(
+            "razon_social", "Razón social", "razon_social", False, ("razon_social", "rs", "empresa")
         ),
         INITIAL_STOCK,
     ),

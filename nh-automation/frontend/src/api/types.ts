@@ -1,4 +1,4 @@
-export type Role = "master_admin" | "admin" | "supervisor" | "operator";
+export type Role = "master_admin" | "admin" | "production_manager" | "operator";
 
 export interface User {
   id: number;
@@ -43,6 +43,15 @@ export interface Setting {
   value: unknown;
 }
 
+export type OrderType = "trabajo" | "retrabajo";
+
+export interface OrderSequence {
+  order_type: OrderType;
+  prefix: string;
+  next_number: number;
+  updated_at: string;
+}
+
 /** Builds a `?a=1&b=x` query string, skipping empty values. */
 export function toQuery(params: Record<string, string | number | boolean | null | undefined>) {
   const qs = new URLSearchParams();
@@ -74,12 +83,21 @@ export interface Client extends CatalogBase {
   code: string;
 }
 
+export interface RazonSocial extends CatalogBase {
+  code: string;
+  name: string;
+}
+
 export interface Product extends CatalogBase {
   code: string;
   name: string;
   provider: string;
   presentation: string;
   container_liters: string | null;
+  /** Null only for imported products not yet assigned one. */
+  razon_social_id: number | null;
+  razon_social_code: string | null;
+  razon_social_name: string | null;
 }
 
 export type PackagingCategory = "envase" | "caja" | "bolsa" | "etiqueta" | "otro";

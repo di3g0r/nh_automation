@@ -1,23 +1,27 @@
-"""User table (data model §2). Roles: master_admin, admin, supervisor, operator."""
+"""User table (data model §2). Roles: master_admin, admin, production_manager, operator."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.core.permissions import Role
 from app.db.base import Base, TimestampMixin
+
+ROLE_CHECK = "role IN (" + ", ".join(f"'{r.value}'" for r in Role) + ")"
 
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = (CheckConstraint(ROLE_CHECK, name="ck_users_role"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    # Role is validated against app.core.permissions.Role at the service layer;
-    # kept as a plain string column so new roles never need a migration.
+    # One of app.core.permissions.Role; validated by the schemas and by the
+    # ck_users_role CHECK constraint (a new role needs a migration).
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     pin_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -15,6 +15,7 @@ import {
   IconAlertTriangle,
   IconBooks,
   IconChevronDown,
+  IconBuildingFactory2,
   IconClipboardList,
   IconHome,
   IconKey,
@@ -41,6 +42,12 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: strings.nav.inicio, to: "/", icon: IconHome },
   {
+    label: strings.nav.produccion,
+    to: "/produccion",
+    icon: IconBuildingFactory2,
+    permission: "orders.assign",
+  },
+  {
     label: strings.nav.ordenes,
     to: "/ordenes",
     icon: IconClipboardList,
@@ -60,6 +67,7 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: strings.nav.productos, to: "/catalogos/productos" },
       { label: strings.nav.materiales, to: "/catalogos/materiales" },
+      { label: strings.nav.razonesSociales, to: "/catalogos/razones-sociales" },
       { label: strings.nav.clientes, to: "/catalogos/clientes" },
       { label: strings.nav.sitios, to: "/catalogos/sitios" },
       { label: strings.nav.maquinas, to: "/catalogos/maquinas" },

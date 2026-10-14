@@ -40,7 +40,14 @@ accents ignored; full alias list in `app/services/imports/columns.py`):
 | `proveedor` | yes | `categoria` (`envase`, `caja`, `bolsa`, `etiqueta`, `otro`) | yes |
 | `presentacion` | yes | `umbral_stock_bajo` (whole number) | no |
 | `litros_por_envase` | no | `existencia_inicial` (whole units) | no |
+| `razon_social` (code: `NB`, `ANB`, …) | no* | | |
 | `existencia_inicial` (liters) | no | | |
+
+\* `razon_social` must be the code of an existing, active razón social
+(Catálogos → Razones sociales); an unknown code is a row error. Empty imports
+the product without one (row warning; such products cannot be used in orders
+until someone sets it). In "create or update" mode an empty value never clears
+an existing razón social.
 
 `existencia_inicial` is booked at the default site as a receipt
 ("Importación inicial"), only for items that have no stock movements yet.

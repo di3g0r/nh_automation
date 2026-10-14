@@ -9,12 +9,14 @@ export const strings = {
   },
   nav: {
     inicio: "Inicio",
+    produccion: "Producción",
     ordenes: "Órdenes",
     maquinas: "Máquinas",
     inventario: "Inventario",
     catalogos: "Catálogos",
     productos: "Productos",
     materiales: "Materiales de empaque",
+    razonesSociales: "Razones sociales",
     clientes: "Clientes",
     sitios: "Sitios",
     usuarios: "Usuarios",
@@ -56,7 +58,7 @@ export const strings = {
     roles: {
       master_admin: "Administrador maestro",
       admin: "Administrador",
-      supervisor: "Supervisor",
+      production_manager: "Jefe de producción",
       operator: "Operador",
     },
     acciones: {
@@ -116,11 +118,21 @@ export const strings = {
     actualizado: "Configuración actualizada.",
     claves: {
       default_site_id: "Sitio por defecto",
-      approver_must_differ: "El aprobador debe ser distinto del solicitante",
       plc_offline_seconds: "Segundos sin señal para considerar un PLC desconectado",
       session_timeout_office_hours: "Expiración de sesión - oficina (horas)",
       session_timeout_operator_hours: "Expiración de sesión - operador (horas)",
-      difference_tolerance_liters: "Tolerancia de diferencia (litros)",
+      difference_tolerance_liters: "Tolerancia de diferencia (L)",
+      difference_tolerance_percent: "Tolerancia de diferencia (%)",
+    },
+    secuencias: {
+      title: "Numeración de órdenes",
+      aviso: "Cambiar el siguiente número afecta la numeración de nuevas órdenes.",
+      tipo: "Tipo de orden",
+      prefijo: "Prefijo",
+      siguiente: "Siguiente número",
+      ejemplo: "Próxima orden",
+      tipos: { trabajo: "Trabajo", retrabajo: "Retrabajo" },
+      actualizado: "Siguiente número actualizado.",
     },
   },
   catalogs: {
@@ -153,6 +165,18 @@ export const strings = {
       presentation: "Presentación",
       presentationHint: "Ej.: 1X20, 1000",
       container_liters: "Litros por envase (opcional)",
+      razon_social: "Razón social",
+      sinRazonSocial: "Sin razón social",
+      todasRazones: "Todas las razones sociales",
+    },
+    razonesSociales: {
+      title: "Razones sociales",
+      nuevo: "Nueva razón social",
+      buscar: "Buscar por código o nombre",
+      code: "Código",
+      codeHint:
+        "1 a 6 letras mayúsculas o dígitos (ej.: NB, ANB). Se usa en el número de operación.",
+      name: "Nombre",
     },
     packaging: {
       title: "Materiales de empaque",
@@ -176,7 +200,7 @@ export const strings = {
       buscar: "Buscar por nombre o código",
       name: "Nombre",
       code: "Código corto",
-      codeHint: "Ej.: NB, ANB (se usa en el número de operación)",
+      codeHint: "Código corto del cliente",
     },
     sites: {
       title: "Sitios",
@@ -344,6 +368,11 @@ export const strings = {
   home: {
     title: "Inicio",
     bienvenida: "Bienvenido al sistema de órdenes de trabajo.",
+  },
+  production: {
+    title: "Producción",
+    placeholder:
+      "Aquí aparecerán las órdenes nuevas por asignar y las órdenes completadas por cerrar (próxima fase).",
   },
   operatorStation: {
     title: "Estación de operador",

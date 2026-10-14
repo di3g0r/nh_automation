@@ -201,3 +201,93 @@
 - [x] Receipts and adjustments update stock with movements and audit entries.
 - [x] Alerts visible (Inicio card, top-bar badge, inventory badges/filters).
 - [x] Tests pass; `docs/PROGRESS.md` updated.
+
+## Phase 1b — v2/v3 updates (2026-10-13)
+
+### What was built
+
+- **Roles and permissions.** `supervisor` → `production_manager` (*Jefe de
+  producción*) everywhere. `app/core/permissions.py` matches overview §4
+  exactly (added `sequences.manage`, `orders.comment`, `orders.expiry`,
+  `orders.close`, `production.control`, `machines.plc_credentials`; removed
+  `orders.approve`, `orders.verify`, `assignments.work_own`). `inventory.move`
+  is master admin + admin only; the Production manager views inventory and
+  catalogs but cannot move stock or edit catalogs.
+- **Migration `c7d2f4a8b913_phase1b_v2_updates`:** converts supervisor users,
+  adds `ck_users_role`; creates and seeds `razones_sociales` (NB, ANB, RS3,
+  RS4 — `TODO(OPEN-16)`) and `order_sequences` (T/R, next 1); adds
+  `products.razon_social_id` (FK, nullable, indexed); deactivates the
+  NOBELTECH/AGRONB clients (audited); deletes `approver_must_differ`; adds
+  `difference_tolerance_percent` (`TODO(OPEN-19)`). Downgrade reverses it.
+- **Backend:** razón social CRUD (`/razones-sociales`, audited, code 1–6
+  uppercase letters/digits, unique); `/order-sequences` (GET/PATCH,
+  `sequences.manage`, audited) in `sequence_service`; products require an
+  active razón social on create, reject clearing it on edit, return
+  `razon_social_code/name`, and filter by `razon_social_id` /
+  `without_razon_social`; import column `razon_social` (+ aliases) with
+  error/warning/no-clear rules; tolerance validation in `settings_service`.
+  `seed-catalogs` = site + razones sociales + sequences + packaging (no
+  clients); `seed-dev` adds `jefe`, two fake clients, NB/ANB on the dev
+  products (also back-fills existing ones).
+- **Frontend:** role label *Jefe de producción*; **Producción** placeholder page
+  and nav item; the Production manager lands there after login; Catálogos →
+  **Razones sociales**; products show a razón social column (badge *Sin razón
+  social*), a filter (including "Sin razón social") and a required select in
+  the form; Configuración shows *Tolerancia de diferencia (L)* / *(%)* with
+  limits and a **Numeración de órdenes** section (master admin) with the
+  required warning.
+- Samples/docs: `tools/samples/productos_ejemplo.csv` and
+  `products.sql.example` include `razon_social`; `external_sources/README.md`
+  documents it; README gets a "Network access" (LAN only, no VPN) section;
+  README/CLAUDE.md command tables updated. No VPN references existed in code or
+  deploy files.
+- **Tests:** backend 169 passed + 1 skipped (Postgres-only): new
+  `tests/test_phase1b.py` and a rewritten `tests/test_permissions.py` (the map
+  is compared against a literal copy of the §4 table, plus every role on every
+  gated endpoint). Frontend 13 (new `landing.test.ts`).
+
+### Deviations from the spec
+
+- Added a DB CHECK constraint on `users.role` (the spec mentions
+  "enum/check constraint"; there was none before). See DECISIONS.
+- The role-migration test runs the migration's `convert_roles` SQL against a
+  scratch SQLite table (the suite doesn't run Alembic); the full migration was
+  verified on the dev PostgreSQL instead (below).
+
+### Verified end-to-end (dev stack, PostgreSQL)
+
+- Planted a `supervisor` user, ran `alembic upgrade head`: both it and the
+  phase-1 dev user `bodega` became `production_manager`; clients NB/ANB
+  inactive with audit rows; settings and seeds as expected. Setting a user
+  back to `supervisor` is rejected by `ck_users_role`. `alembic downgrade -1`
+  + `upgrade head` round trip OK; `alembic check`: no drift.
+- `seed-dev` and `seed-catalogs` run cleanly on the migrated DB.
+- Browser: `jefe` logs in and lands on Producción (nav: Inicio, Producción,
+  Órdenes, Inventario); the master admin sees Razones sociales, the products
+  column/badge, both tolerances and Numeración de órdenes in Configuración.
+- `import-catalog products --file tools/samples/productos_ejemplo.csv --mode
+  upsert --apply` set ANB on the product that had none.
+
+### Known issues / not verified
+
+- The first migration attempt failed (wrong `audit_log` columns) and rolled
+  back cleanly; fixed before the successful run.
+- Changing a razón social code already used by an order is not blocked yet
+  (phase 2).
+- Not click-tested: creating/editing a razón social or product through the
+  forms, and saving a sequence number from the UI (covered by API tests).
+- The `Órdenes` nav item still has no page (phase 2); `Máquinas` (overview §6)
+  is not in the nav yet (no page until a later phase).
+- README still says Caddy proxies `/plc` (from the obsolete PLC HTTP API
+  design); untouched in this phase.
+- Carried over: prod compose / backup / restore not exercised; bundle > 500 kB.
+
+### Definition of done
+
+- [x] Migrations apply on the dev stack; `alembic check` shows no drift.
+- [x] A *Jefe de producción* user can log in and lands on the Producción placeholder.
+- [x] Razones sociales visible and editable in Spanish UI; products show their razón social.
+- [x] Sequences visible and editable by the master admin in Configuración.
+- [x] Sample CSV with a `razon_social` column imports correctly.
+- [x] NOBELTECH/AGRONB no longer active as clients.
+- [x] All tests, lint and type checks pass; `docs/PROGRESS.md` updated.

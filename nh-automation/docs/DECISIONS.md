@@ -93,7 +93,9 @@ Record decisions made during implementation that are not in the specs (date, dec
   deactivated or un-defaulted). The phase-0 `default_site_id` setting is kept
   in sync automatically and is now read-only in Configuración.
 - **Catalog reads** need `catalogs.manage` **or** `inventory.view` (the
-  supervisor needs item lists for receipts). Writes need `catalogs.manage`.
+  supervisor needs item lists for receipts). *(Phase 1b: the supervisor role no
+  longer exists; the rule is kept for the Production manager, who views stock
+  and will pick products in orders.)* Writes need `catalogs.manage`.
   The Catálogos menu is only shown with `catalogs.manage`.
 - **Machine API key:** `nhm_` + 32 random bytes, stored as SHA-256 (high
   entropy, so a slow hash isn't needed, the same as session tokens). Never
@@ -108,3 +110,46 @@ Record decisions made during implementation that are not in the specs (date, dec
   `seed-dev` holds dev-only data and refuses to run in production.
 - **`GET /inventory/movement-users`** (not in the spec) feeds the movements
   "user" filter for supervisors, who can't read `/users`.
+
+## 2026-10-13 — Phase 1b
+
+- **Role CHECK constraint.** `users.role` was a free string validated only by
+  the schemas. The phase-1b migration converts `supervisor` users to
+  `production_manager` and then adds `ck_users_role` (the four v3 roles), so
+  the database itself rejects `supervisor`. Adding a role now needs a
+  migration.
+- **Razón social code normalization.** Codes are uppercased before validation
+  (`nb` → `NB`), then must match `^[A-Z0-9]{1,6}$`. Same for import values.
+  Names are not required to be unique (the spec only asks for unique codes).
+- **Catalog reads include razones sociales** with the same rule as other
+  catalogs (`catalogs.manage` or `inventory.view`); writes need
+  `catalogs.manage`.
+- **Product razón social on edit.** `razon_social_id` is required on create.
+  On PATCH, omitting it keeps the current value, and an explicit `null` is
+  rejected (`RAZON_SOCIAL_REQUIRED`). The active check only runs when the value
+  changes, so a product whose razón social was later deactivated can still be
+  edited. The Spanish form always sends it (required select).
+- **Import:** `razon_social` holds the code. Unknown **or inactive** code → row
+  error. Empty → warning only when the product would end up without one (new
+  product, or an existing product that has none); in upsert mode empty never
+  clears the stored value. Aliases: `razon_social`, `razón social`, `rs`,
+  `empresa`.
+- **Client seed correction.** The migration deactivates clients with codes
+  `NB`/`ANB` and writes `audit_log` rows with `user_id` NULL and
+  `"via": "migration:phase1b"`. Dev sample clients are `DEV1`/`DEV2`
+  ("Cliente de prueba … (dev)").
+- **Order sequences** live in `order_sequences` with CHECKs (`next_number >= 1`,
+  type in trabajo/retrabajo). `PATCH /order-sequences/{order_type}` locks the
+  row (`FOR UPDATE`) and audits `entity="order_sequence"`. A lower number is
+  allowed (the spec only requires >= 1); the phase-2 unique `operation_number`
+  must refuse a collision.
+- **Tolerance settings** are JSON numbers validated in `settings_service`:
+  liters >= 0, percent 0–100, both at most 2 decimals; integral values are
+  stored as ints. Other settings keep the phase-0 behavior (no validation).
+  `approver_must_differ` is deleted by the migration and removed from defaults.
+- **Production manager landing / nav.** `Producción` is gated by
+  `orders.assign` (master admin and Production manager). Landing is decided on
+  login (`utils/landing.ts`); `Inicio` stays reachable for the Production
+  manager (only operators are always redirected away from it).
+- **Dev seed user** for the new role is `jefe`. Existing dev databases keep the
+  old `bodega` user, now converted to `production_manager` by the migration.

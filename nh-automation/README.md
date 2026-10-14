@@ -18,10 +18,16 @@ This README covers phase 0 (foundation). It will grow with each phase.
 ```
 /backend      FastAPI app (app/), Alembic migrations/, tests/
 /frontend     React app (src/)
-/tools        PLC simulator, import helpers (later phases)
+/tools        samples/ (example import files)
 /deploy       docker-compose files, Caddyfile, backup scripts
 /docs         CONTEXT.md, specs/, DECISIONS.md, PROGRESS.md
 ```
+
+## Network access
+
+The system is reachable **only from the local network** (office and plant
+LAN). There is no VPN and nothing is exposed to the internet. From phase 4 the
+PostgreSQL port is opened only to the PLCs' addresses.
 
 ## First-time setup
 
@@ -47,8 +53,8 @@ This README covers phase 0 (foundation). It will grow with each phase.
 | Logs | `docker compose -f deploy/docker-compose.dev.yml logs -f api` |
 | Create master admin | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli create-master-admin` |
 | Seed default settings | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-settings` |
-| Seed dev data (dev only: sample products, M01–M06, one user per role) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-dev` |
-| Re-ensure base catalogs (site, clients, 14 packaging items) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-catalogs` |
+| Seed dev data (dev only: sample products and clients, M01–M06, one user per role: master admin, admin, jefe de producción, operador) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-dev` |
+| Re-ensure base catalogs (site, razones sociales, order sequences, 14 packaging items) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-catalogs` |
 | Preview a catalog import from the external DB (add `--apply --username <u>` to save) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli import-catalog products` |
 | New migration | `docker compose -f deploy/docker-compose.dev.yml exec api alembic revision --autogenerate -m "message"` |
 | Apply migrations | `docker compose -f deploy/docker-compose.dev.yml exec api alembic upgrade head` |

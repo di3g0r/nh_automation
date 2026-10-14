@@ -1,9 +1,11 @@
-"""Catalog CRUD: sites, clients, products, packaging items (FR-CAT-1..4, FR-CAT-6).
+"""Catalog CRUD: sites, clients, razones sociales, products, packaging items
+(FR-CAT-1..4, FR-CAT-6, phase 1b).
 
 Machines live in machine_service (API key handling). Rules enforced here:
 - unique codes (and unique site names) -> 409 `DUPLICATE_CODE` / `DUPLICATE_NAME`;
 - no hard deletes; deactivation through `is_active` (FR-CAT-6);
 - exactly one active default site (FR-CAT-4);
+- a product needs an active razón social when created or given a new one;
 - every write is audited (BR-18).
 """
 
@@ -18,7 +20,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from app.core.errors import AppError, not_found
 from app.db.base import Base
-from app.models.catalogs import Client, PackagingItem, Product, Site
+from app.models.catalogs import Client, PackagingItem, Product, RazonSocial, Site
 from app.models.user import User
 from app.schemas.catalogs import (
     ClientCreate,
@@ -27,6 +29,8 @@ from app.schemas.catalogs import (
     PackagingItemUpdate,
     ProductCreate,
     ProductUpdate,
+    RazonSocialCreate,
+    RazonSocialUpdate,
     SiteCreate,
     SiteUpdate,
 )
@@ -38,10 +42,14 @@ M = TypeVar("M", bound=Base)
 _META: dict[type[Base], tuple[str, str, tuple[str, ...]]] = {
     Site: ("Sitio", "site", ("name", "is_default", "is_active")),
     Client: ("Cliente", "client", ("name", "code", "is_active")),
+    RazonSocial: ("Razón social", "razon_social", ("code", "name", "is_active")),
     Product: (
         "Producto",
         "product",
-        ("code", "name", "provider", "presentation", "container_liters", "is_active"),
+        (
+            "code", "name", "provider", "presentation", "container_liters",
+            "razon_social_id", "is_active",
+        ),
     ),
     PackagingItem: (
         "Material de empaque",
@@ -155,12 +163,12 @@ def _audit_update(db: Session, obj: Base, before: dict[str, Any], *, actor: User
     )
 
 
-def require_active(obj: Base, label: str) -> None:
+def require_active(obj: Base, label: str, *, feminine: bool = False) -> None:
     """FR-CAT-6: inactive items cannot be selected in new records."""
     if not getattr(obj, "is_active", True):
         raise AppError(
             "INACTIVE_ITEM",
-            f"{label} está inactivo y no puede seleccionarse.",
+            f"{label} está {'inactiva' if feminine else 'inactivo'} y no puede seleccionarse.",
             422,
             {"id": getattr(obj, "id", None)},
         )
@@ -266,6 +274,40 @@ def update_client(db: Session, client_id: int, data: ClientUpdate, *, actor: Use
     return client
 
 
+# Razones sociales --------------------------------------------------------------
+
+_RS_DUPLICATE = "Ya existe una razón social con ese código."
+
+
+def create_razon_social(db: Session, data: RazonSocialCreate, *, actor: User) -> RazonSocial:
+    ensure_unique(db, RazonSocial, RazonSocial.code, data.code, message=_RS_DUPLICATE)
+    return _create(db, RazonSocial(code=data.code, name=data.name, is_active=True), actor=actor)
+
+
+def update_razon_social(
+    db: Session, rs_id: int, data: RazonSocialUpdate, *, actor: User
+) -> RazonSocial:
+    rs = get(db, RazonSocial, rs_id)
+    before = snapshot(rs, _META[RazonSocial][2])
+    if data.code is not None:
+        # TODO(phase 2): refuse changing a code already used by an order.
+        ensure_unique(
+            db, RazonSocial, RazonSocial.code, data.code, exclude_id=rs.id, message=_RS_DUPLICATE
+        )
+    apply_changes(rs, data)
+    db.flush()
+    _audit_update(db, rs, before, actor=actor)
+    db.commit()
+    db.refresh(rs)
+    return rs
+
+
+def get_active_razon_social(db: Session, rs_id: int) -> RazonSocial:
+    rs = get(db, RazonSocial, rs_id)
+    require_active(rs, "La razón social", feminine=True)
+    return rs
+
+
 # Products --------------------------------------------------------------------
 
 
@@ -273,6 +315,7 @@ def create_product(db: Session, data: ProductCreate, *, actor: User) -> Product:
     ensure_unique(
         db, Product, Product.code, data.code, message="Ya existe un producto con ese código."
     )
+    get_active_razon_social(db, data.razon_social_id)
     product = Product(**data.model_dump(), is_active=True)
     return _create(db, product, actor=actor)
 
@@ -282,6 +325,13 @@ def update_product(
 ) -> Product:
     product = get(db, Product, product_id)
     before = snapshot(product, _META[Product][2])
+    if "razon_social_id" in data.model_fields_set:
+        if data.razon_social_id is None:
+            raise AppError(
+                "RAZON_SOCIAL_REQUIRED", "La razón social es obligatoria.", 422
+            )
+        if data.razon_social_id != product.razon_social_id:
+            get_active_razon_social(db, data.razon_social_id)
     if data.code is not None:
         ensure_unique(
             db, Product, Product.code, data.code, exclude_id=product.id,

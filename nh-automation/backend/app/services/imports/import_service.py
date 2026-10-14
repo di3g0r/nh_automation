@@ -9,6 +9,11 @@ Modes:
 - `upsert`: new codes are created; existing codes are updated with the
   non-empty values from the source (is_active is never changed by an import).
 
+Products carry an optional `razon_social` column with the razón social code:
+an unknown or inactive code is a row error; an empty value is a warning (the
+product is imported without one) and, in upsert mode, never clears a value
+already stored.
+
 Initial stock (optional column) is written as a `receipt` movement at the
 default site with note "Importación inicial", only for items without any
 movement at that site yet -- so re-running an import never doubles stock.
@@ -24,7 +29,7 @@ from typing import Any, Literal, cast
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.models.catalogs import PackagingItem, Product
+from app.models.catalogs import PackagingItem, Product, RazonSocial
 from app.models.user import User
 from app.services import audit_service, stock_service
 from app.services.catalog_service import _META, get_default_site, snapshot
@@ -97,6 +102,19 @@ def _existing_by_code(
     return {obj.code: obj for obj in items}
 
 
+def _razones_by_code(db: Session) -> dict[str, RazonSocial]:
+    return {rs.code: rs for rs in db.query(RazonSocial).all()}
+
+
+def _db_values(values: dict[str, Any], razones: dict[str, RazonSocial]) -> dict[str, Any]:
+    """Row values as model attributes: the razón social code becomes its id."""
+    out = {k: v for k, v in values.items() if k not in ("initial_stock", "razon_social")}
+    if "razon_social" in values:
+        code = values["razon_social"]
+        out["razon_social_id"] = razones[code].id if code else None
+    return out
+
+
 # Value parsing -----------------------------------------------------------------
 
 
@@ -136,6 +154,9 @@ def _parse(spec: FieldSpec, raw: Any, errors: list[str]) -> Any:
         if spec.max_length and len(value) > spec.max_length:
             errors.append(f"{spec.label}: máximo {spec.max_length} caracteres.")
         return value
+
+    if spec.kind == "razon_social":
+        return _as_text(raw).upper()  # existence is checked against the DB in _validate
 
     if spec.kind == "category":
         category = CATEGORY_ALIASES.get(normalize_header(raw))
@@ -187,6 +208,7 @@ def _validate(
     model = _MODEL[kind]
     item_type = _ITEM_TYPE[kind]
     existing = _existing_by_code(db, model)
+    razones = _razones_by_code(db)
     default_site = get_default_site(db)
     seen: dict[str, int] = {}
     rows: list[RowResult] = []
@@ -208,6 +230,14 @@ def _validate(
         if stock is not None and kind == "packaging-items" and stock != stock.to_integral_value():
             errors.append("Existencia inicial: los materiales se registran en unidades enteras.")
 
+        rs_code = values.get("razon_social")
+        if rs_code:
+            rs = razones.get(rs_code)
+            if rs is None:
+                errors.append(f"Razón social: '{rs_code}' no existe.")
+            elif not rs.is_active:
+                errors.append(f"Razón social: '{rs_code}' está inactiva.")
+
         if errors:
             result.action = "error"
             rows.append(result)
@@ -220,10 +250,20 @@ def _validate(
             result.action = "skip"
             result.warnings.append("El código ya existe; se omitirá (modo: solo crear nuevos).")
         else:
-            changes = _changes(current, values)
+            changes = _changes(current, _db_values(values, razones))
             result.action = "update" if changes else "skip"
             if not changes:
                 result.warnings.append("Sin cambios.")
+
+        if (
+            kind == "products"
+            and not rs_code
+            and result.action != "skip"
+            and (current is None or current.razon_social_id is None)  # type: ignore[union-attr]
+        ):
+            result.warnings.append(
+                "Sin razón social: el producto se importará sin razón social."
+            )
 
         if stock:  # None or 0 -> nothing to do
             if default_site is None:
@@ -256,7 +296,7 @@ def _changes(obj: Product | PackagingItem, values: dict[str, Any]) -> dict[str, 
     """Fields whose non-empty source value differs from the stored one."""
     out: dict[str, Any] = {}
     for key, value in values.items():
-        if key in ("code", "initial_stock") or value is None:
+        if key == "code" or value is None:
             continue
         current = getattr(obj, key)
         if isinstance(current, Decimal) or isinstance(value, Decimal):
@@ -302,11 +342,12 @@ def confirm(
     item_type = _ITEM_TYPE[kind]
     _, entity, fields = _META[model]
     existing = _existing_by_code(db, model)
+    razones = _razones_by_code(db)
     default_site = get_default_site(db)
 
     try:
         for row in result.rows:
-            values = {k: v for k, v in row.values.items() if k != "initial_stock"}
+            values = _db_values(row.values, razones)
             obj = existing.get(values["code"])
             if row.action == "create":
                 obj = model(**{k: v for k, v in values.items() if v is not None}, is_active=True)

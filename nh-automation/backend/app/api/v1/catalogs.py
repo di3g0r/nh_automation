@@ -1,8 +1,10 @@
-"""Catalog endpoints (FR-CAT): products, packaging items, clients, sites, machines.
+"""Catalog endpoints (FR-CAT): products, packaging items, razones sociales,
+clients, sites, machines.
 
-Writes need `catalogs.manage`. Reads are also open to `inventory.view` so the
-warehouse supervisor can pick items in receipts/adjustments. No DELETE
-endpoints: items are deactivated with PATCH {"is_active": false} (FR-CAT-6).
+Writes need `catalogs.manage`. Reads are also open to `inventory.view` (the
+Production manager sees products and stock, and will pick them in orders).
+No DELETE endpoints: items are deactivated with PATCH {"is_active": false}
+(FR-CAT-6).
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_any_permission, require_permission
 from app.core.permissions import Permission
-from app.models.catalogs import Client, Machine, PackagingItem, Product, Site
+from app.models.catalogs import Client, Machine, PackagingItem, Product, RazonSocial, Site
 from app.models.user import User
 from app.schemas.catalogs import (
     ClientCreate,
@@ -29,6 +31,9 @@ from app.schemas.catalogs import (
     ProductCreate,
     ProductOut,
     ProductUpdate,
+    RazonSocialCreate,
+    RazonSocialOut,
+    RazonSocialUpdate,
     SiteCreate,
     SiteOut,
     SiteUpdate,
@@ -52,31 +57,39 @@ _PAGE_SIZE = Query(50, ge=1, le=500)
 def list_products(
     search: str | None = None,
     active: bool | None = None,
+    razon_social_id: int | None = None,
+    without_razon_social: bool = False,
     page: int = _PAGE,
     page_size: int = _PAGE_SIZE,
     db: Session = Depends(get_db),
     _actor: User = Depends(_read),
 ) -> Page[ProductOut]:
+    filters = []
+    if razon_social_id is not None:
+        filters.append(Product.razon_social_id == razon_social_id)
+    if without_razon_social:
+        filters.append(Product.razon_social_id.is_(None))
     items, total = catalog_service.list_items(
         db, Product,
         search_fields=[Product.code, Product.name, Product.provider],
         order_by=Product.code, search=search, active=active, page=page, page_size=page_size,
+        extra_filters=filters,
     )
-    return Page[ProductOut](items=[ProductOut.model_validate(i) for i in items], total=total)
+    return Page[ProductOut](items=[ProductOut.from_model(i) for i in items], total=total)
 
 
 @router.post("/products", response_model=ProductOut, status_code=201)
 def create_product(
     payload: ProductCreate, db: Session = Depends(get_db), actor: User = Depends(_manage)
 ) -> ProductOut:
-    return ProductOut.model_validate(catalog_service.create_product(db, payload, actor=actor))
+    return ProductOut.from_model(catalog_service.create_product(db, payload, actor=actor))
 
 
 @router.get("/products/{item_id}", response_model=ProductOut)
 def get_product(
     item_id: int, db: Session = Depends(get_db), _actor: User = Depends(_read)
 ) -> ProductOut:
-    return ProductOut.model_validate(catalog_service.get(db, Product, item_id))
+    return ProductOut.from_model(catalog_service.get(db, Product, item_id))
 
 
 @router.patch("/products/{item_id}", response_model=ProductOut)
@@ -86,8 +99,57 @@ def update_product(
     db: Session = Depends(get_db),
     actor: User = Depends(_manage),
 ) -> ProductOut:
-    return ProductOut.model_validate(
+    return ProductOut.from_model(
         catalog_service.update_product(db, item_id, payload, actor=actor)
+    )
+
+
+# Razones sociales --------------------------------------------------------------
+
+
+@router.get("/razones-sociales", response_model=Page[RazonSocialOut])
+def list_razones_sociales(
+    search: str | None = None,
+    active: bool | None = None,
+    page: int = _PAGE,
+    page_size: int = _PAGE_SIZE,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(_read),
+) -> Page[RazonSocialOut]:
+    items, total = catalog_service.list_items(
+        db, RazonSocial, search_fields=[RazonSocial.code, RazonSocial.name],
+        order_by=RazonSocial.code, search=search, active=active, page=page, page_size=page_size,
+    )
+    return Page[RazonSocialOut](
+        items=[RazonSocialOut.model_validate(i) for i in items], total=total
+    )
+
+
+@router.post("/razones-sociales", response_model=RazonSocialOut, status_code=201)
+def create_razon_social(
+    payload: RazonSocialCreate, db: Session = Depends(get_db), actor: User = Depends(_manage)
+) -> RazonSocialOut:
+    return RazonSocialOut.model_validate(
+        catalog_service.create_razon_social(db, payload, actor=actor)
+    )
+
+
+@router.get("/razones-sociales/{item_id}", response_model=RazonSocialOut)
+def get_razon_social(
+    item_id: int, db: Session = Depends(get_db), _actor: User = Depends(_read)
+) -> RazonSocialOut:
+    return RazonSocialOut.model_validate(catalog_service.get(db, RazonSocial, item_id))
+
+
+@router.patch("/razones-sociales/{item_id}", response_model=RazonSocialOut)
+def update_razon_social(
+    item_id: int,
+    payload: RazonSocialUpdate,
+    db: Session = Depends(get_db),
+    actor: User = Depends(_manage),
+) -> RazonSocialOut:
+    return RazonSocialOut.model_validate(
+        catalog_service.update_razon_social(db, item_id, payload, actor=actor)
     )
 
 

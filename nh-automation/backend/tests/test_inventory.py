@@ -58,7 +58,7 @@ def _on_hand(client, item_type, item_id, site_id) -> Decimal:
 
 
 def test_receipt_creates_movement_and_updates_on_hand(client, db_session, product, base_catalogs):
-    headers = login_as(client, db_session, "supervisor")
+    headers = login_as(client, db_session, "admin")
     resp = _receipt(client, headers, base_catalogs.id, product.id, "1000.50", note="Proveedor")
     assert resp.status_code == 201
     body = resp.json()
@@ -108,7 +108,7 @@ def test_receipt_on_inactive_item_rejected(client, db_session, product, base_cat
 
 
 def test_adjustment_computes_delta_and_requires_reason(client, db_session, product, base_catalogs):
-    headers = login_as(client, db_session, "supervisor")
+    headers = login_as(client, db_session, "admin")
     _receipt(client, headers, base_catalogs.id, product.id, "100")
 
     payload = {
@@ -198,7 +198,7 @@ def test_movements_list_filters(client, db_session, product, envase, base_catalo
 
 
 def test_inventory_list_shows_items_without_stock(client, db_session, product, base_catalogs):
-    login_as(client, db_session, "supervisor")
+    login_as(client, db_session, "production_manager")  # view only
     rows = client.get(f"{API}/inventory?item_type=product").json()
     assert rows["total"] == 1
     row = rows["items"][0]

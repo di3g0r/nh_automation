@@ -1,10 +1,9 @@
 """Role -> permission map (overview §4). The single source of truth for authorization.
 
 Endpoints depend on a *permission* (via `require_permission` in app/api/deps.py),
-never on a role directly. Only the permissions actually used by phase 0 endpoints
-are enforced today (users.manage, audit.view, settings.manage); the rest of the
-map is defined here now because it is shared, static configuration -- not a
-feature of a later phase -- so later phases just import it.
+never on a role directly. The whole map is defined here; permissions without an
+endpoint yet (orders.*, production.control, machines.*) are wired by the phase
+that adds those routes.
 """
 
 from __future__ import annotations
@@ -15,24 +14,27 @@ from enum import StrEnum
 class Role(StrEnum):
     MASTER_ADMIN = "master_admin"
     ADMIN = "admin"
-    SUPERVISOR = "supervisor"
+    PRODUCTION_MANAGER = "production_manager"  # Jefe de producción (replaces supervisor, v3)
     OPERATOR = "operator"
 
 
 class Permission(StrEnum):
     USERS_MANAGE = "users.manage"
     CATALOGS_MANAGE = "catalogs.manage"
+    SEQUENCES_MANAGE = "sequences.manage"
     INVENTORY_VIEW = "inventory.view"
     INVENTORY_MOVE = "inventory.move"
     ORDERS_VIEW = "orders.view"
     ORDERS_EDIT = "orders.edit"
-    ORDERS_APPROVE = "orders.approve"
+    ORDERS_COMMENT = "orders.comment"
     ORDERS_ASSIGN = "orders.assign"
+    ORDERS_EXPIRY = "orders.expiry"
     ORDERS_TRACEABILITY = "orders.traceability"
-    ORDERS_VERIFY = "orders.verify"
+    PRODUCTION_CONTROL = "production.control"
     ORDERS_CANCEL = "orders.cancel"
-    ASSIGNMENTS_WORK_OWN = "assignments.work_own"
+    ORDERS_CLOSE = "orders.close"
     MACHINES_BOARD = "machines.board"
+    MACHINES_PLC_CREDENTIALS = "machines.plc_credentials"
     AUDIT_VIEW = "audit.view"
     SETTINGS_MANAGE = "settings.manage"
 
@@ -46,27 +48,30 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.INVENTORY_MOVE,
             Permission.ORDERS_VIEW,
             Permission.ORDERS_EDIT,
-            Permission.ORDERS_APPROVE,
-            Permission.ORDERS_ASSIGN,
+            Permission.ORDERS_COMMENT,
             Permission.ORDERS_TRACEABILITY,
+            Permission.PRODUCTION_CONTROL,
             Permission.ORDERS_CANCEL,
-            Permission.ASSIGNMENTS_WORK_OWN,
             Permission.MACHINES_BOARD,
         }
     ),
-    Role.SUPERVISOR: frozenset(
+    Role.PRODUCTION_MANAGER: frozenset(
         {
             Permission.INVENTORY_VIEW,
-            Permission.INVENTORY_MOVE,
             Permission.ORDERS_VIEW,
+            Permission.ORDERS_EDIT,
+            Permission.ORDERS_COMMENT,
             Permission.ORDERS_ASSIGN,
+            Permission.ORDERS_EXPIRY,
             Permission.ORDERS_TRACEABILITY,
-            Permission.ORDERS_VERIFY,
-            Permission.ASSIGNMENTS_WORK_OWN,
+            Permission.PRODUCTION_CONTROL,
+            Permission.ORDERS_CANCEL,
+            Permission.ORDERS_CLOSE,
             Permission.MACHINES_BOARD,
         }
     ),
-    Role.OPERATOR: frozenset({Permission.ASSIGNMENTS_WORK_OWN}),
+    # Operators see only their machine's orders (phase 3 scopes that separately).
+    Role.OPERATOR: frozenset({Permission.ORDERS_TRACEABILITY, Permission.PRODUCTION_CONTROL}),
 }
 
 
