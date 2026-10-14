@@ -21,6 +21,7 @@ from sqlalchemy.orm import InstrumentedAttribute, Session
 from app.core.errors import AppError, not_found
 from app.db.base import Base
 from app.models.catalogs import Client, PackagingItem, Product, RazonSocial, Site
+from app.models.orders import WorkOrder
 from app.models.user import User
 from app.schemas.catalogs import (
     ClientCreate,
@@ -289,8 +290,14 @@ def update_razon_social(
 ) -> RazonSocial:
     rs = get(db, RazonSocial, rs_id)
     before = snapshot(rs, _META[RazonSocial][2])
-    if data.code is not None:
-        # TODO(phase 2): refuse changing a code already used by an order.
+    if data.code is not None and data.code != rs.code:
+        # The code is part of existing operation numbers (BR-19).
+        if db.query(WorkOrder.id).filter(WorkOrder.razon_social_id == rs.id).first():
+            raise AppError(
+                "RAZON_SOCIAL_IN_USE",
+                "No se puede cambiar el código: ya se usa en números de operación de órdenes.",
+                409,
+            )
         ensure_unique(
             db, RazonSocial, RazonSocial.code, data.code, exclude_id=rs.id, message=_RS_DUPLICATE
         )

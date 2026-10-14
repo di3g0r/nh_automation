@@ -9,6 +9,7 @@ import type {
   MovementType,
   MovementUser,
   Page,
+  ReservationHolder,
 } from "./types";
 
 export interface InventoryParams {
@@ -41,8 +42,19 @@ export const inventoryApi = {
   movements: (params: MovementParams) =>
     api.get<Page<Movement>>(`/inventory/movements${toQuery({ ...params })}`),
   movementUsers: () => api.get<MovementUser[]>("/inventory/movement-users"),
-  availability: (item_type: ItemType, item_id: number, site_id: number) =>
-    api.get<Availability>(`/inventory/availability${toQuery({ item_type, item_id, site_id })}`),
+  availability: (
+    item_type: ItemType,
+    item_id: number,
+    site_id: number,
+    exclude_order_id?: number | null,
+  ) =>
+    api.get<Availability>(
+      `/inventory/availability${toQuery({ item_type, item_id, site_id, exclude_order_id })}`,
+    ),
+  reservations: (item_type: ItemType, item_id: number, site_id: number) =>
+    api.get<ReservationHolder[]>(
+      `/inventory/reservations${toQuery({ item_type, item_id, site_id })}`,
+    ),
   alerts: () => api.get<Alerts>("/inventory/alerts"),
   receipt: (payload: {
     item_type: ItemType;

@@ -291,3 +291,82 @@
 - [x] Sample CSV with a `razon_social` column imports correctly.
 - [x] NOBELTECH/AGRONB no longer active as clients.
 - [x] All tests, lint and type checks pass; `docs/PROGRESS.md` updated.
+
+## Phase 2 — Work orders and reservations (2026-10-13)
+
+Built across two sessions: the first one stopped unexpectedly after the
+backend and the list/form pages were written; the second one finished the UI,
+verified everything and wrote these notes.
+
+### What was built
+
+- **Data model** (migration `d4e8a1b2c3f5`): `work_orders`,
+  `order_base_products`, `order_packaging`, `order_checklist` (4 rows per
+  order), `order_comments`, `reservations`; FK `stock_movements.order_id` →
+  `work_orders`.
+- **Services:** `order_service` (create/edit/delete/cancel, comments,
+  history, list with filters, print data, snapshots FR-ORD-1, numbering
+  BR-19, rework BR-20/21, razón social BR-22) and `reservation_service`
+  (reserve/release with row locking, overselling block BR-2/3, packaging
+  warnings BR-4). `stock_service` now returns real reserved/available; a
+  razón social code used by an order can no longer be changed.
+- **API:** `GET/POST /orders`, `GET/PATCH/DELETE /orders/{id}`,
+  `POST /orders/{id}/cancel`, `GET/POST /orders/{id}/comments`,
+  `GET /orders/{id}/history`, `GET /orders/{id}/print-data`,
+  `GET /inventory/availability` (`exclude_order_id`),
+  `GET /inventory/reservations`.
+- **Frontend:** Órdenes list (status/type badges, all FR-ORD-2 filters,
+  search); Nueva/Editar orden form following the paper form (Retrabajo
+  checkbox, rework kind, related order, live availability per base product,
+  automatic/required razón social, packaging availability); Detalle de orden
+  with tabs Información / Materiales / Checklist (read-only) / Comentarios /
+  Historial and actions Editar / Imprimir / Cancelar (reason) / Eliminar by
+  status and permission; Imprimir page (letter size, Code 128 barcodes);
+  inventory *Reservado* opens the orders holding the reservation.
+- **Tests:** backend 211 passed + 5 skipped (4 Postgres-only concurrency
+  tests, 1 pre-existing); `tests/test_orders.py` covers every test in the
+  spec and acceptance scenarios 1–7. Frontend 20 (new `formatHistoryValue`).
+
+### Verified end-to-end
+
+- Concurrency tests (`tests/test_orders_concurrency.py`) run inside the `api`
+  container against a scratch PostgreSQL database: 4 passed (last liters,
+  distinct numbers, opposite lock order without deadlock, concurrent edits).
+- `alembic check` on the dev stack: no drift.
+- Acceptance scenarios on an isolated scratch database (the dev database was
+  not touched): 1 created through the UI → `T-1 ANB`, *Pendiente* expiry,
+  1,000 L reserved / 500 L available; 2 blocked with the exact spec message
+  naming `T-1 ANB`; 3 mixed NB+ANB requires a choice, NB → `T-2 NB`;
+  4 own-stock rework → `R-1 NB`, no client, edit form has no type switch and
+  PATCH of `order_type` is refused; 5 Production manager edits twice + comment,
+  shown with author and time in Comentarios and Historial; 6 packaging warning
+  shown in the form, on save and on the detail page; 7 print page lists both
+  base products, the type badge and both barcodes. Cancel via the UI modal
+  releases stock and shows reason/author. No console errors.
+
+### Deviations from the spec
+
+- None in behavior. Small additions: `GET /inventory/reservations` (for the
+  reserved drill-down) and `exclude_order_id` on availability (for editing).
+
+### Known issues / not verified
+
+- Not click-tested: delete through the UI and the related-order picker
+  (Retrabajo de orden anterior). Both are covered by API tests, but phase 2
+  cannot produce a completed order, so the picker is always empty for now.
+- The print page was checked on screen, not on paper; page breaks on long
+  orders are untested.
+- One full backend run (out of five) failed 7 tests with an argon2 hashing
+  error, likely transient memory pressure on the dev machine; the same tests
+  pass in isolation and the four later full runs were clean. Not reproduced,
+  so not fixed. If it recurs, look at the argon2 memory cost used by
+  `hash_secret` in tests.
+- Carried over: README still mentions Caddy proxying `/plc`; prod compose /
+  backup / restore not exercised; bundle > 500 kB.
+
+### Definition of done
+
+- [x] Scenarios pass manually and in automated tests.
+- [x] Audit log records create/edit/cancel/delete/comment
+  (`test_audit_log_records_every_order_action`).
+- [x] Tests pass; `docs/PROGRESS.md` updated.

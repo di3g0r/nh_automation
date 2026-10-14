@@ -1,5 +1,13 @@
 from app.models.audit_log import AuditLog
 from app.models.catalogs import Client, Machine, PackagingItem, Product, RazonSocial, Site
+from app.models.orders import (
+    OrderBaseProduct,
+    OrderChecklistItem,
+    OrderComment,
+    OrderPackaging,
+    Reservation,
+    WorkOrder,
+)
 from app.models.sequences import OrderSequence
 from app.models.session import UserSession
 from app.models.settings import Setting
@@ -20,4 +28,10 @@ __all__ = [
     "Machine",
     "StockLevel",
     "StockMovement",
+    "WorkOrder",
+    "OrderBaseProduct",
+    "OrderPackaging",
+    "OrderChecklistItem",
+    "OrderComment",
+    "Reservation",
 ]

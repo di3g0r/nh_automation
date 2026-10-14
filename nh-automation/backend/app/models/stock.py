@@ -67,9 +67,10 @@ class StockMovement(Base, TimestampMixin):
     )
     type: Mapped[str] = mapped_column(String(32), nullable=False)
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)  # signed
-    # work_orders / assignments tables arrive in phases 2 and 3; those phases
-    # add the foreign keys. Plain integers until then.
-    order_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_orders.id", name="fk_stock_movements_order_id"), nullable=True, index=True
+    )
+    # The assignments table arrives in phase 3, which adds this foreign key.
     assignment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True

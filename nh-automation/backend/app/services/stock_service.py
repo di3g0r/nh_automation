@@ -5,8 +5,8 @@
   atomic SQL increment, and writes the `stock_movements` row in the same
   transaction. It never commits: callers compose it with their own writes
   (e.g. phase 3 completion) and commit once.
-- `get_available` = on hand - active reservations (BR-1). Reservations arrive
-  in phase 2; until then reserved is always 0.
+- `get_available` = on hand - active reservations (BR-1). Reservations are
+  written by app/services/reservation_service.py (phase 2).
 """
 
 from __future__ import annotations
@@ -15,12 +15,13 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.catalogs import PackagingItem, Product
+from app.models.orders import Reservation
 from app.models.stock import MOVEMENT_TYPES, StockLevel, StockMovement
 from app.models.user import User
 
@@ -48,6 +49,11 @@ class ItemRef:
         if self.item_type == "product":
             return StockMovement.product_id == self.item_id
         return StockMovement.packaging_item_id == self.item_id
+
+    def reservation_filter(self):  # type: ignore[no-untyped-def]
+        if self.item_type == "product":
+            return Reservation.product_id == self.item_id
+        return Reservation.packaging_item_id == self.item_id
 
 
 @dataclass(frozen=True)
@@ -94,14 +100,29 @@ def get_on_hand(db: Session, site_id: int, item: ItemRef) -> Decimal:
     return Decimal(level.on_hand) if level else Decimal("0")
 
 
-def get_reserved(db: Session, site_id: int, item: ItemRef) -> Decimal:
-    # TODO(phase 2): sum of active reservations for this item and site (BR-1).
-    return Decimal("0")
+def get_reserved(
+    db: Session, site_id: int, item: ItemRef, *, exclude_order_id: int | None = None
+) -> Decimal:
+    """Sum of active reservations for this item and site (BR-1).
+
+    `exclude_order_id` leaves out one order's own reservations (editing, BR-2).
+    """
+    query = select(func.coalesce(func.sum(Reservation.quantity), 0)).where(
+        Reservation.site_id == site_id,
+        Reservation.status == "active",
+        item.reservation_filter(),
+    )
+    if exclude_order_id is not None:
+        query = query.where(Reservation.order_id != exclude_order_id)
+    return Decimal(db.execute(query).scalar_one())
 
 
-def get_available(db: Session, item: ItemRef, site_id: int) -> Availability:
+def get_available(
+    db: Session, item: ItemRef, site_id: int, *, exclude_order_id: int | None = None
+) -> Availability:
     return Availability(
-        on_hand=get_on_hand(db, site_id, item), reserved=get_reserved(db, site_id, item)
+        on_hand=get_on_hand(db, site_id, item),
+        reserved=get_reserved(db, site_id, item, exclude_order_id=exclude_order_id),
     )
 
 

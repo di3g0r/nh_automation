@@ -85,6 +85,7 @@ READS = [
     ("/api/v1/inventory/movement-users", VIEWERS),
     ("/api/v1/inventory/alerts", VIEWERS),
     ("/api/v1/imports/products/sources", OFFICE),
+    ("/api/v1/orders", VIEWERS),  # orders.view
 ]
 
 
@@ -153,6 +154,44 @@ def test_sequences_writes_need_sequences_manage(client, db_session, base_catalog
         "/api/v1/order-sequences/trabajo", json={"next_number": 5}, headers=headers
     )
     assert resp.status_code == (200 if role == M else 403)
+
+
+@pytest.mark.parametrize("role", ALL_ROLES)
+def test_order_writes_need_order_permissions(client, db_session, base_catalogs, nb_id, role):
+    """orders.edit / orders.comment / orders.cancel: everyone except operators (phase 2)."""
+    from decimal import Decimal
+
+    from app.models.catalogs import Client, Product
+    from app.services import stock_service
+
+    product = Product(code="P1", name="P", provider="X", presentation="1000",
+                      razon_social_id=nb_id, is_active=True)
+    cliente = Client(name="C", code="C1", is_active=True)
+    db_session.add_all([product, cliente])
+    db_session.flush()
+    stock_service.apply_movement(
+        db_session, site_id=base_catalogs.id, item=stock_service.ItemRef("product", product.id),
+        movement_type="receipt", quantity=Decimal("100"), user=None,
+    )
+    db_session.commit()
+    allowed = role in VIEWERS
+    headers = login_as(client, db_session, role)
+    resp = client.post("/api/v1/orders", json={
+        "order_type": "trabajo", "client_id": cliente.id,
+        "base_products": [{"product_id": product.id, "liters": "10"}],
+        "finished_product_id": product.id,
+    }, headers=headers)
+    assert resp.status_code == (201 if allowed else 403)
+    if not allowed:
+        return
+    order_id = resp.json()["id"]
+    url = f"/api/v1/orders/{order_id}"
+    assert client.get(url).status_code == 200
+    assert client.patch(url, json={"labels_planned": 1}, headers=headers).status_code == 200
+    assert client.post(f"{url}/comments", json={"text": "x"}, headers=headers).status_code == 201
+    assert client.get(f"{url}/history").status_code == 200
+    assert client.get(f"{url}/print-data").status_code == 200
+    assert client.post(f"{url}/cancel", json={"reason": "r"}, headers=headers).status_code == 200
 
 
 def test_me_returns_production_manager_permissions(client, db_session):

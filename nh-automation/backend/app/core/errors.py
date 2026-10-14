@@ -41,8 +41,15 @@ async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
 # Common, reusable errors -----------------------------------------------------
 
 
+# Labels whose head noun is feminine in Spanish ("Orden no encontrada").
+_FEMININE_LABELS = ("Orden", "Razón social", "Máquina", "Secuencia")
+
+
 def not_found(entity_label: str) -> AppError:
-    return AppError("NOT_FOUND", f"{entity_label} no encontrado.", status.HTTP_404_NOT_FOUND)
+    ending = "a" if entity_label.startswith(_FEMININE_LABELS) else "o"
+    return AppError(
+        "NOT_FOUND", f"{entity_label} no encontrad{ending}.", status.HTTP_404_NOT_FOUND
+    )
 
 
 def forbidden(message: str = "No tiene permiso para realizar esta acción.") -> AppError:

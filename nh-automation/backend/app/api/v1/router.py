@@ -7,6 +7,7 @@ from app.api.v1 import (
     health,
     imports,
     inventory,
+    orders,
     sequences,
     settings,
     users,
@@ -22,3 +23,4 @@ api_router.include_router(catalogs.router)
 api_router.include_router(imports.router)
 api_router.include_router(inventory.router)
 api_router.include_router(sequences.router)
+api_router.include_router(orders.router)

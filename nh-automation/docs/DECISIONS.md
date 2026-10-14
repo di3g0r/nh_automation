@@ -153,3 +153,37 @@ Record decisions made during implementation that are not in the specs (date, dec
   manager (only operators are always redirected away from it).
 - **Dev seed user** for the new role is `jefe`. Existing dev databases keep the
   old `bodega` user, now converted to `production_manager` by the migration.
+
+## 2026-10-13 — Phase 2
+
+- **Reservation locking (BR-3).** `reservation_service.reserve_for_order` locks
+  the `stock_levels` rows of the order's base products in stock-row id order,
+  then re-reads other orders' active reservations, so concurrent creates/edits
+  cannot over-reserve and opposite row orders cannot deadlock. Verified with
+  the Postgres-only tests in `tests/test_orders_concurrency.py`.
+- **Missing stock row = 0 on hand.** A base product with no `stock_levels` row
+  at the order's site is always short; reserving never creates stock rows.
+- **One transaction per write.** Every order write commits once at the end; a
+  refused create (shortage, validation) consumes no operation number.
+- **Edit = release + re-reserve, only for what changed.** Reservations are
+  recomputed per item kind; a packaging-only edit does not re-check base
+  products. The form's live *Disponible* excludes the order's own
+  reservations (`GET /inventory/availability?exclude_order_id=`).
+- **Comment on edit.** The optional comment in the edit form is stored as a
+  new `order_comments` entry (append-only); if nothing else changed, the
+  history shows only a *Comentario* entry, not an *Edición*.
+- **Razón social code locked once used.** Changing the code of a razón social
+  that already appears in an order is refused (`RAZON_SOCIAL_IN_USE`, 409),
+  since the code is part of the operation number (BR-19). Phase-1b TODO.
+- **UI permission checks.** `can_edit` / `can_cancel` / `can_delete` in the
+  order payload reflect status only; the UI also checks `orders.edit` /
+  `orders.cancel`, and the API enforces both.
+- **Print view** is a route outside the app shell (`/ordenes/:id/imprimir`)
+  with plain HTML/CSS for letter size, and renders two Code 128 barcodes
+  (operation number, finished product code) with `jsbarcode` 3.11.6.
+  TODO(OPEN-12) for label printer integration.
+- **Inventory reserved drill-down.** Clicking a non-zero *Reservado* opens the
+  holding orders (`GET /inventory/reservations`); rows link to the order only
+  for users with `orders.view`.
+- **404 wording.** `not_found()` uses the feminine form for feminine labels
+  (`Orden no encontrada`, `Razón social …`, `Máquina …`, `Secuencia …`).

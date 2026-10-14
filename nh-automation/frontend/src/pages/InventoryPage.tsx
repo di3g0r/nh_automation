@@ -5,6 +5,7 @@ import {
   Button,
   Checkbox,
   Group,
+  Modal,
   Pagination,
   Select,
   Stack,
@@ -19,12 +20,13 @@ import { useDebouncedValue } from "@mantine/hooks";
 import { IconAdjustments, IconHistory, IconPlus } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { sitesApi } from "../api/catalogs";
 import { inventoryApi } from "../api/inventory";
 import type { InventoryRow, ItemType, MovementType } from "../api/types";
 import { AdjustmentModal, ReceiptModal } from "../components/inventory/StockMoveModals";
+import { OrderStatusBadge, OrderTypeBadge } from "../components/orders/OrderBadges";
 import { useAuth } from "../context/AuthContext";
 import { strings } from "../i18n/strings";
 import { CATEGORY_OPTIONS } from "./catalogs/CatalogPages";
@@ -141,6 +143,7 @@ function StockTab({
   const [includeInactive, setIncludeInactive] = useState(false);
   const [page, setPage] = useState(1);
   const isPackaging = itemType === "packaging";
+  const [holdersFor, setHoldersFor] = useState<InventoryRow | null>(null);
 
   const query = {
     item_type: itemType,
@@ -248,7 +251,17 @@ function StockTab({
                 <Table.Td ta="right" c={r.negative ? "red" : undefined}>
                   {formatQuantity(r.item_type, r.on_hand)}
                 </Table.Td>
-                <Table.Td ta="right">{formatQuantity(r.item_type, r.reserved)}</Table.Td>
+                <Table.Td ta="right">
+                  {Number(r.reserved) > 0 ? (
+                    <Tooltip label={t.reservas.verOrdenes}>
+                      <Anchor component="button" size="sm" onClick={() => setHoldersFor(r)}>
+                        {formatQuantity(r.item_type, r.reserved)}
+                      </Anchor>
+                    </Tooltip>
+                  ) : (
+                    formatQuantity(r.item_type, r.reserved)
+                  )}
+                </Table.Td>
                 <Table.Td ta="right" fw={500}>
                   {formatQuantity(r.item_type, r.available)}
                 </Table.Td>
@@ -285,7 +298,64 @@ function StockTab({
         </Table>
       </Table.ScrollContainer>
       {totalPages > 1 && <Pagination value={page} onChange={setPage} total={totalPages} />}
+      {holdersFor && <ReservationsModal row={holdersFor} onClose={() => setHoldersFor(null)} />}
     </Stack>
+  );
+}
+
+/** Orders holding the reservations behind a row's *reserved* figure. */
+function ReservationsModal({ row, onClose }: { row: InventoryRow; onClose: () => void }) {
+  const r = t.reservas;
+  const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canOpen = hasPermission("orders.view");
+  const { data, isLoading } = useQuery({
+    queryKey: ["inventory", "reservations", row.item_type, row.item_id, row.site_id],
+    queryFn: () => inventoryApi.reservations(row.item_type, row.item_id, row.site_id),
+  });
+  return (
+    <Modal
+      opened
+      onClose={onClose}
+      size="lg"
+      title={`${r.title}: ${row.code} — ${row.name} (${row.site_name})`}
+    >
+      {isLoading && <Text c="dimmed">{strings.common.cargando}</Text>}
+      {data?.length === 0 && <Text c="dimmed">{r.ninguna}</Text>}
+      {!!data?.length && (
+        <Table highlightOnHover={canOpen}>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{r.orden}</Table.Th>
+              <Table.Th>{r.estado}</Table.Th>
+              <Table.Th ta="right">{r.cantidad}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {data.map((h) => (
+              <Table.Tr
+                key={h.order_id}
+                style={canOpen ? { cursor: "pointer" } : undefined}
+                onClick={canOpen ? () => navigate(`/ordenes/${h.order_id}`) : undefined}
+              >
+                <Table.Td>
+                  <Group gap="xs">
+                    <Text fw={600} size="sm">
+                      {h.operation_number}
+                    </Text>
+                    <OrderTypeBadge type={h.order_type} size="xs" />
+                  </Group>
+                </Table.Td>
+                <Table.Td>
+                  <OrderStatusBadge status={h.status} size="sm" />
+                </Table.Td>
+                <Table.Td ta="right">{formatQuantity(row.item_type, h.quantity)}</Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+    </Modal>
   );
 }
 

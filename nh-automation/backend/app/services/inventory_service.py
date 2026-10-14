@@ -10,11 +10,13 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import cast
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.timezone import to_utc
 from app.models.catalogs import PackagingItem, Product, Site
+from app.models.orders import Reservation
 from app.models.stock import StockLevel, StockMovement
 from app.models.user import User
 from app.schemas.inventory import (
@@ -39,8 +41,21 @@ def _item_name(item: Product | PackagingItem) -> str:
 def _reserved_map(
     db: Session, item_type: ItemType, site_ids: list[int]
 ) -> dict[tuple[int, int], Decimal]:
-    # TODO(phase 2): aggregate active reservations per (site_id, item_id) (BR-1).
-    return {}
+    """Active reservations per (site_id, item_id) (BR-1)."""
+    item_col = (
+        Reservation.product_id if item_type == "product" else Reservation.packaging_item_id
+    )
+    rows = (
+        db.query(Reservation.site_id, item_col, func.sum(Reservation.quantity))
+        .filter(
+            Reservation.site_id.in_(site_ids),
+            Reservation.status == "active",
+            item_col.is_not(None),
+        )
+        .group_by(Reservation.site_id, item_col)
+        .all()
+    )
+    return {(site_id, item_id): Decimal(total) for site_id, item_id, total in rows}
 
 
 def _level_map(

@@ -17,6 +17,10 @@ import { HomePage } from "./pages/HomePage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { OperatorStationPage } from "./pages/OperatorStationPage";
+import { OrderDetailPage } from "./pages/orders/OrderDetailPage";
+import { OrderFormPage } from "./pages/orders/OrderFormPage";
+import { OrderPrintPage } from "./pages/orders/OrderPrintPage";
+import { OrdersListPage } from "./pages/orders/OrdersListPage";
 import { ProductionPage } from "./pages/ProductionPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UsersPage } from "./pages/UsersPage";
@@ -41,6 +45,15 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Print view renders without the app shell so only the form prints. */}
+      <Route
+        path="/ordenes/:id/imprimir"
+        element={
+          <RouteGuard permission="orders.view">
+            <OrderPrintPage />
+          </RouteGuard>
+        }
+      />
 
       <Route
         element={
@@ -56,6 +69,38 @@ export function App() {
           element={
             <RouteGuard permission="orders.assign">
               <ProductionPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ordenes"
+          element={
+            <RouteGuard permission="orders.view">
+              <OrdersListPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ordenes/nueva"
+          element={
+            <RouteGuard permission="orders.edit">
+              <OrderFormPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ordenes/:id"
+          element={
+            <RouteGuard permission="orders.view">
+              <OrderDetailPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/ordenes/:id/editar"
+          element={
+            <RouteGuard permission="orders.edit">
+              <OrderFormPage />
             </RouteGuard>
           }
         />

@@ -23,7 +23,8 @@ from app.schemas.inventory import (
     MovementUser,
     ReceiptIn,
 )
-from app.services import catalog_service, inventory_service, stock_service
+from app.schemas.orders import ReservationHolder
+from app.services import catalog_service, inventory_service, reservation_service, stock_service
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
@@ -107,16 +108,43 @@ def get_availability(
     item_type: ItemType,
     item_id: int,
     site_id: int,
+    exclude_order_id: int | None = None,
     db: Session = Depends(get_db),
     _actor: User = Depends(_view),
 ) -> Availability:
+    """Used live by the order form. `exclude_order_id` leaves out that order's
+    own reservations (editing an order, BR-2)."""
     catalog_service.get(db, stock_service.item_model(item_type), item_id)
     catalog_service.get(db, Site, site_id)
-    a = stock_service.get_available(db, stock_service.ItemRef(item_type, item_id), site_id)
+    a = stock_service.get_available(
+        db, stock_service.ItemRef(item_type, item_id), site_id,
+        exclude_order_id=exclude_order_id,
+    )
     return Availability(
         item_type=item_type, item_id=item_id, site_id=site_id,
         on_hand=a.on_hand, reserved=a.reserved, available=a.available,
     )
+
+
+@router.get("/reservations", response_model=list[ReservationHolder])
+def list_reservations(
+    item_type: ItemType,
+    item_id: int,
+    site_id: int,
+    db: Session = Depends(get_db),
+    _actor: User = Depends(_view),
+) -> list[ReservationHolder]:
+    """Orders holding the active reservations behind the *reserved* column."""
+    item = stock_service.ItemRef(item_type, item_id)
+    return [
+        ReservationHolder(
+            order_id=o.id, operation_number=o.operation_number,
+            order_type=o.order_type,  # type: ignore[arg-type]
+            status=o.status,  # type: ignore[arg-type]
+            quantity=q, created_at=o.created_at,
+        )
+        for o, q in reservation_service.holders(db, site_id, item)
+    ]
 
 
 @router.get("/alerts", response_model=AlertsOut)
