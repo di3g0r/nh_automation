@@ -94,6 +94,7 @@ export function formatHistoryValue(
         if (v && typeof v === "object") {
           const o = v as Record<string, unknown>;
           if ("code" in o && "liters" in o) return `${o.code} ${o.liters} L`;
+          if ("machine" in o && "liters" in o) return `${o.machine} ${o.liters} L`;
           if ("packaging_item_id" in o) {
             const id = Number(o.packaging_item_id);
             return `${packagingCodes.get(id) ?? `#${id}`} × ${o.planned_qty}`;

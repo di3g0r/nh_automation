@@ -370,3 +370,80 @@ verified everything and wrote these notes.
 - [x] Audit log records create/edit/cancel/delete/comment
   (`test_audit_log_records_every_order_action`).
 - [x] Tests pass; `docs/PROGRESS.md` updated.
+
+## Phase 3 — Production manager, machines, production controls, closing (2026-10-13)
+
+### What was built
+
+- **Operators leave the platform (v3.1).** Permission map has three roles (admin
+  lost `production.control`; legacy `operator` has none). Login refuses
+  operators with *"Los operadores no usan la plataforma."* (only with the right
+  password); existing operator sessions get 401. `/auth/pin-login` and every PIN
+  field are gone (the `pin_hash` column stays). The API rejects role `operator` on
+  create and edit. `seed-dev` creates no operator. Operator station page,
+  landing rule and PIN tab removed.
+- **Migration `e6f1a3b5c7d9`:** `assignments`, `assignment_events`, FK
+  `stock_movements.assignment_id`. It also deactivates operator users (audited
+  `via: migration:phase3`), revokes their sessions and deletes the
+  `session_timeout_operator_hours` setting.
+- **`assignment_service`:** replaces the whole split (BR-7, exact sum), queue and
+  reorder (BR-14), start/pause/resume/complete with an `Actor` (manual user or,
+  from phase 4, `Actor.plc(machine)`), derived order status (§3) and completion
+  stock (BR-8/9/10). Base consumption is computed on the cumulative actual liters,
+  so 2-decimal rounding never loses liters. Packaging is consumed when the order
+  completes; corrections before closing write only the difference.
+- **`order_service`:** expiry (BR-20). Editing is also allowed in `assigned`, and
+  changing products or liters deletes the split (BR-16). Cancelling also cancels
+  the assignments. Adds checklist, lots and materials (BR-24), closing (BR-11),
+  and new fields in `OrderOut`: assignments, difference, flags, `close_missing`
+  and who/when. The print data includes who assigned.
+- **`production_service`:** read models for Por asignar / En producción / Por
+  cerrar, the machine board and machine queues.
+- **API:** every endpoint listed in the spec (`app/api/v1/production.py`,
+  registered before catalogs so `/machines/board` works).
+- **Frontend:** Producción page (10 s refresh); expiry, assign-machines and close
+  modals; production buttons with a Terminar confirmation. Order detail has a
+  Máquinas tab and editable Checklist (with lots) and Materiales (prefilled with
+  planned values), plus history labels for the new actions. Máquinas board (5 s
+  refresh, maintenance switch, queue modal with reorder). Inicio summary (today's
+  orders by status, machines by state). The print page shows machines, results
+  and the close note. **Máquinas** added to the nav.
+
+### Tests
+
+- Backend: **232 passed**, 5 skipped. New: `tests/test_production.py` (38 tests)
+  covers every item in the spec's Tests list and scenarios 1–7 at API level.
+  Existing auth, permission, user and order tests were updated for three roles.
+  `ruff` and `mypy` are clean.
+- Postgres concurrency tests (scratch DB): 6 passed.
+- Frontend: 26 tests passed (new `utils/production.test.ts`). Lint, typecheck and
+  build pass (only the old AuthContext fast-refresh warning remains).
+
+### Verified on PostgreSQL (scratch DB `nh_phase3`; the dev DB was not touched)
+
+- `alembic upgrade head` with a planted operator user and session: the user was
+  deactivated and audited, and the session revoked. `downgrade -1` + `upgrade
+  head` round trip OK; `alembic check` shows no drift.
+- Browser (local API :8001 + Vite :5174 against the scratch DB): the login page
+  has no PIN tab; `jefe` lands on Producción, and T-1 ANB shows *Falta fecha de
+  caducidad* / *Falta asignar máquinas*. The expiry modal opens.
+
+### Known issues / not verified
+
+- **The click-through stopped at the expiry modal** (usage limit). Typing into
+  the Mantine month Select and pressing Enter did not select a value. This may be
+  automation-only, but check the picker by hand. Not click-tested: saving expiry,
+  the assign modal, production buttons, Terminar, closing, the board/queue modal,
+  editable Checklist/Materiales, the print page and Inicio. All of these are
+  covered by API tests.
+- **The dev DB is not migrated yet:** restart `api` (or run `alembic upgrade
+  head`). This deactivates the dev `operador` user, as intended.
+- Scratch DB `nh_phase3` is left in the dev Postgres; drop it when done.
+- Carried over: prod compose / backup / restore not exercised; bundle > 500 kB.
+
+### Definition of done
+
+- [x] The whole paper process can be done in the system without PLCs (API +
+      UI built; UI only partly click-tested, see above).
+- [~] Scenarios pass in automated tests; manual run incomplete.
+- [x] Tests pass; `docs/PROGRESS.md` updated.

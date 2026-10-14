@@ -13,6 +13,7 @@ import {
   Table,
   Tabs,
   Text,
+  TextInput,
   Textarea,
   Title,
 } from "@mantine/core";
@@ -21,33 +22,45 @@ import {
   IconAlertTriangle,
   IconArrowLeft,
   IconBan,
+  IconCalendar,
   IconEdit,
+  IconEngine,
+  IconLock,
   IconPrinter,
   IconTrash,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ordersApi } from "../../api/orders";
-import type { Order, OrderHistoryEntry, PackagingShortageWarning } from "../../api/types";
+import { productionApi } from "../../api/production";
+import type {
+  ChecklistItem,
+  Order,
+  OrderHistoryEntry,
+  PackagingShortageWarning,
+} from "../../api/types";
 import { OrderStatusBadge, OrderTypeBadge } from "../../components/orders/OrderBadges";
+import { AssignMachinesModal } from "../../components/production/AssignMachinesModal";
+import { AssignmentsTable } from "../../components/production/AssignmentsTable";
+import { CloseOrderModal } from "../../components/production/CloseOrderModal";
+import { ExpiryModal } from "../../components/production/ExpiryModal";
+import { DifferenceText } from "../../components/production/ProductionBadges";
+import { useInvalidateProduction } from "../../components/production/useInvalidateProduction";
 import { useAuth } from "../../context/AuthContext";
 import { strings } from "../../i18n/strings";
 import { formatDateTime, formatLiters } from "../../utils/datetime";
 import { errorMessage, notifyError } from "../../utils/notify";
-import {
-  changedKeys,
-  formatExpiry,
-  formatHistoryValue,
-  formatPlainDate,
-} from "../../utils/orders";
+import { changedKeys, formatExpiry, formatHistoryValue, formatPlainDate } from "../../utils/orders";
 import { formatUnits } from "../../utils/quantity";
 
 const t = strings.orders;
 const f = t.form;
 const d = t.detalle;
+const pr = strings.production;
+const TABS = ["informacion", "maquinas", "materiales", "checklist", "comentarios", "historial"];
 
 /** FR-ORD-3: `/ordenes/:id`, tabs + actions by status and permission. */
 export function OrderDetailPage() {
@@ -55,8 +68,13 @@ export function OrderDetailPage() {
   const orderId = Number(id);
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get("tab");
   const [cancelOpen, setCancelOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [expiryOpen, setExpiryOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [closeOpen, setCloseOpen] = useState(false);
   const { data: order, error } = useQuery({
     queryKey: ["orders", orderId],
     queryFn: () => ordersApi.get(orderId),
@@ -83,6 +101,9 @@ export function OrderDetailPage() {
   const canEdit = order.can_edit && hasPermission("orders.edit");
   const canCancel = order.can_cancel && hasPermission("orders.cancel");
   const canDelete = order.can_delete && hasPermission("orders.edit");
+  const canExpiry = order.can_set_expiry && hasPermission("orders.expiry");
+  const canAssign = order.can_assign && hasPermission("orders.assign");
+  const canClose = order.can_close && hasPermission("orders.close");
 
   return (
     <Stack maw={1100}>
@@ -99,6 +120,33 @@ export function OrderDetailPage() {
           <OrderStatusBadge status={order.status} size="lg" />
         </Group>
         <Group>
+          {canExpiry && (
+            <Button
+              variant={order.expiry_date ? "light" : "filled"}
+              leftSection={<IconCalendar size={16} />}
+              onClick={() => setExpiryOpen(true)}
+            >
+              {pr.asignarCaducidad}
+            </Button>
+          )}
+          {canAssign && (
+            <Button
+              variant={order.missing_for_assign.includes("machines") ? "filled" : "light"}
+              leftSection={<IconEngine size={16} />}
+              onClick={() => setAssignOpen(true)}
+            >
+              {pr.asignarMaquinas}
+            </Button>
+          )}
+          {canClose && (
+            <Button
+              color="teal"
+              leftSection={<IconLock size={16} />}
+              onClick={() => setCloseOpen(true)}
+            >
+              {pr.cerrarOrden}
+            </Button>
+          )}
           {canEdit && (
             <Button
               leftSection={<IconEdit size={16} />}
@@ -144,7 +192,39 @@ export function OrderDetailPage() {
           {d.motivoCancelacion}: {order.cancel_reason}
         </Alert>
       )}
-      {order.warnings.length > 0 && (
+      {order.status === "created" && order.missing_for_assign.length > 0 && (
+        <Alert color="blue" variant="light">
+          <Group gap="xs">
+            {order.missing_for_assign.map((m) => (
+              <Text key={m} size="sm" fw={500}>
+                {pr.missing[m]}
+              </Text>
+            ))}
+          </Group>
+        </Alert>
+      )}
+      {order.difference && (
+        <Alert color={order.difference.within_range ? "teal" : "red"} variant="light">
+          <Group gap="xl">
+            <Text size="sm">
+              {pr.ordenado}: <b>{formatLiters(order.difference.ordered_liters)}</b>
+            </Text>
+            <Text size="sm">
+              {pr.real}: <b>{formatLiters(order.difference.actual_liters)}</b>
+            </Text>
+            <Group gap={4}>
+              <Text size="sm">{pr.diferencia}:</Text>
+              <DifferenceText difference={order.difference} />
+            </Group>
+          </Group>
+        </Alert>
+      )}
+      {order.status === "closed" && order.close_note && (
+        <Alert color="gray" icon={<IconLock />}>
+          {d.notaCierre}: {order.close_note}
+        </Alert>
+      )}
+      {order.warnings.length > 0 && (order.status === "created" || order.status === "assigned") && (
         <Alert color="orange" icon={<IconAlertTriangle />} title={f.avisoEmpaque}>
           {order.warnings.map((w) => (
             <Text key={w.packaging_item_id} size="sm">
@@ -155,9 +235,13 @@ export function OrderDetailPage() {
         </Alert>
       )}
 
-      <Tabs defaultValue="informacion" keepMounted={false}>
+      <Tabs
+        defaultValue={initialTab && TABS.includes(initialTab) ? initialTab : "informacion"}
+        keepMounted={false}
+      >
         <Tabs.List>
           <Tabs.Tab value="informacion">{d.tabs.informacion}</Tabs.Tab>
+          <Tabs.Tab value="maquinas">{d.tabs.maquinas}</Tabs.Tab>
           <Tabs.Tab value="materiales">{d.tabs.materiales}</Tabs.Tab>
           <Tabs.Tab value="checklist">{d.tabs.checklist}</Tabs.Tab>
           <Tabs.Tab value="comentarios">{d.tabs.comentarios}</Tabs.Tab>
@@ -165,6 +249,9 @@ export function OrderDetailPage() {
         </Tabs.List>
         <Tabs.Panel value="informacion" pt="md">
           <InfoTab order={order} />
+        </Tabs.Panel>
+        <Tabs.Panel value="maquinas" pt="md">
+          <MachinesTab order={order} />
         </Tabs.Panel>
         <Tabs.Panel value="materiales" pt="md">
           <MaterialsTab order={order} />
@@ -182,6 +269,11 @@ export function OrderDetailPage() {
 
       {cancelOpen && <CancelModal order={order} onClose={() => setCancelOpen(false)} />}
       {deleteOpen && <DeleteModal order={order} onClose={() => setDeleteOpen(false)} />}
+      {expiryOpen && <ExpiryModal orderId={order.id} onClose={() => setExpiryOpen(false)} />}
+      {assignOpen && (
+        <AssignMachinesModal orderId={order.id} onClose={() => setAssignOpen(false)} />
+      )}
+      {closeOpen && <CloseOrderModal order={order} onClose={() => setCloseOpen(false)} />}
     </Stack>
   );
 }
@@ -321,6 +413,11 @@ function InfoTab({ order }: { order: Order }) {
           </Grid.Col>
           <Grid.Col span={{ base: 12, sm: 4 }}>
             <Field label={f.caducidad}>{expiry}</Field>
+            {order.expiry_set_by_name && (
+              <Text size="xs" c="dimmed">
+                {d.caducidadPor} {order.expiry_set_by_name} · {formatDateTime(order.expiry_set_at)}
+              </Text>
+            )}
           </Grid.Col>
         </Grid>
       </Section>
@@ -328,9 +425,32 @@ function InfoTab({ order }: { order: Order }) {
   );
 }
 
-function MaterialsTab({ order }: { order: Order }) {
+/** Máquinas tab: split, per-machine status and the production controls. */
+function MachinesTab({ order }: { order: Order }) {
+  const live = order.assignments.filter((a) => a.status !== "cancelled");
   return (
     <Stack>
+      <Text size="sm">
+        {d.asignadoTotal}: <b>{formatLiters(order.assigned_liters)}</b> /{" "}
+        {formatLiters(order.finished_liters)}
+      </Text>
+      <AssignmentsTable assignments={live.length ? live : order.assignments} showTimes />
+    </Stack>
+  );
+}
+
+function MaterialsTab({ order }: { order: Order }) {
+  const { hasPermission } = useAuth();
+  if (order.can_edit_traceability && hasPermission("orders.traceability")) {
+    return <MaterialsForm order={order} />;
+  }
+  return (
+    <Stack>
+      {order.status === "closed" && (
+        <Text size="sm" c="dimmed">
+          {d.soloLectura}
+        </Text>
+      )}
       {order.packaging.length === 0 ? (
         <Text c="dimmed">{d.sinMaterial}</Text>
       ) : (
@@ -380,15 +500,148 @@ function MaterialsTab({ order }: { order: Order }) {
   );
 }
 
-function ChecklistTab({ order }: { order: Order }) {
+const INT_RE = /^\d+$/;
+
+/** BR-24: actual packaging and labels, prefilled with the planned values. */
+function MaterialsForm({ order }: { order: Order }) {
+  const invalidate = useInvalidateProduction();
+  const [qty, setQty] = useState<Record<number, string>>(() =>
+    Object.fromEntries(
+      order.packaging.map((p) => [p.packaging_item_id, String(p.actual_qty ?? p.planned_qty)]),
+    ),
+  );
+  const [labels, setLabels] = useState(
+    order.labels_actual !== null
+      ? String(order.labels_actual)
+      : order.labels_planned !== null
+        ? String(order.labels_planned)
+        : "",
+  );
+  const valid =
+    Object.values(qty).every((v) => INT_RE.test(v.trim())) &&
+    (labels.trim() === "" || INT_RE.test(labels.trim()));
+  const mutation = useMutation({
+    mutationFn: () =>
+      productionApi.materials(order.id, {
+        packaging: order.packaging.map((p) => ({
+          packaging_item_id: p.packaging_item_id,
+          actual_qty: Number(qty[p.packaging_item_id]),
+        })),
+        labels_actual: labels.trim() === "" ? null : Number(labels),
+      }),
+    onSuccess: () => {
+      notifications.show({ color: "green", message: d.materialesGuardados });
+      invalidate();
+    },
+    onError: notifyError,
+  });
   return (
     <Stack>
       <Text size="sm" c="dimmed">
-        {d.checklistPendiente}
+        {d.materialesHint}
+      </Text>
+      {order.packaging.length === 0 ? (
+        <Text c="dimmed">{d.sinMaterial}</Text>
+      ) : (
+        <Table striped>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>{t.print.codigo}</Table.Th>
+              <Table.Th>{f.material}</Table.Th>
+              <Table.Th ta="right">{d.planeado}</Table.Th>
+              <Table.Th w={140}>{d.real}</Table.Th>
+              <Table.Th>{d.registradoPor}</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {order.packaging.map((p) => (
+              <Table.Tr key={p.packaging_item_id}>
+                <Table.Td>{p.code}</Table.Td>
+                <Table.Td>{p.description}</Table.Td>
+                <Table.Td ta="right">{formatUnits(p.planned_qty)}</Table.Td>
+                <Table.Td>
+                  <TextInput
+                    size="xs"
+                    value={qty[p.packaging_item_id]}
+                    inputMode="numeric"
+                    aria-label={`${d.real} ${p.code}`}
+                    onChange={(e) => {
+                      const v = e.currentTarget.value;
+                      setQty((q) => ({ ...q, [p.packaging_item_id]: v }));
+                    }}
+                    error={!INT_RE.test(qty[p.packaging_item_id].trim())}
+                  />
+                </Table.Td>
+                <Table.Td>
+                  {p.actual_by_name ? `${p.actual_by_name} · ${formatDateTime(p.actual_at)}` : "—"}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      )}
+      <Grid align="end">
+        <Grid.Col span={{ base: 12, sm: 4 }}>
+          <Field label={`${d.etiquetas} — ${d.planeado}`}>
+            {order.labels_planned === null ? "" : formatUnits(order.labels_planned)}
+          </Field>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 4 }}>
+          <TextInput
+            label={`${d.etiquetas} — ${d.real}`}
+            value={labels}
+            inputMode="numeric"
+            onChange={(e) => setLabels(e.currentTarget.value)}
+            description={
+              order.labels_actual_by_name
+                ? `${order.labels_actual_by_name} · ${formatDateTime(order.labels_actual_at)}`
+                : undefined
+            }
+          />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 4 }}>
+          <Field label={f.codigoBarras}>{t.barcodeModes[order.barcode_mode]}</Field>
+        </Grid.Col>
+      </Grid>
+      <Group justify="flex-end">
+        <Button onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={!valid}>
+          {d.guardarMateriales}
+        </Button>
+      </Group>
+    </Stack>
+  );
+}
+
+/** Checklist (each change records who and when) and lots (BR-24). */
+function ChecklistTab({ order }: { order: Order }) {
+  const { hasPermission } = useAuth();
+  const invalidate = useInvalidateProduction();
+  const editable = order.can_edit_traceability && hasPermission("orders.traceability");
+  const toggle = useMutation({
+    mutationFn: ({ item, checked }: { item: ChecklistItem; checked: boolean }) =>
+      productionApi.checklist(order.id, [{ item, checked }]),
+    onSuccess: () => {
+      notifications.show({ color: "green", message: d.checklistGuardado });
+      invalidate();
+    },
+    onError: notifyError,
+  });
+  return (
+    <Stack>
+      <Text size="sm" c="dimmed">
+        {editable ? d.checklistPendiente : order.status === "closed" ? d.soloLectura : ""}
       </Text>
       {order.checklist.map((c) => (
         <Group key={c.item} justify="space-between" maw={600}>
-          <Checkbox checked={c.checked} readOnly label={t.checklist[c.item]} />
+          <Checkbox
+            checked={c.checked}
+            readOnly={!editable}
+            disabled={toggle.isPending}
+            label={t.checklist[c.item]}
+            onChange={(e) =>
+              editable && toggle.mutate({ item: c.item, checked: e.currentTarget.checked })
+            }
+          />
           {c.checked_by_name && (
             <Text size="xs" c="dimmed">
               {c.checked_by_name} · {formatDateTime(c.checked_at)}
@@ -396,7 +649,69 @@ function ChecklistTab({ order }: { order: Order }) {
           )}
         </Group>
       ))}
+      <LotsSection order={order} editable={editable} />
     </Stack>
+  );
+}
+
+function LotsSection({ order, editable }: { order: Order; editable: boolean }) {
+  const invalidate = useInvalidateProduction();
+  const [newLot, setNewLot] = useState(order.new_lot ?? "");
+  const [previousLot, setPreviousLot] = useState(order.previous_lot ?? "");
+  const mutation = useMutation({
+    mutationFn: () =>
+      productionApi.traceability(order.id, {
+        new_lot: newLot.trim() || null,
+        previous_lot: previousLot.trim() || null,
+      }),
+    onSuccess: () => {
+      notifications.show({ color: "green", message: d.lotesGuardados });
+      invalidate();
+    },
+    onError: notifyError,
+  });
+  const changed =
+    (newLot.trim() || null) !== order.new_lot ||
+    (previousLot.trim() || null) !== order.previous_lot;
+  return (
+    <Section title={strings.orders.print.lotes}>
+      <Grid align="end">
+        <Grid.Col span={{ base: 12, sm: 4 }}>
+          <TextInput
+            label={d.loteAnterior}
+            value={previousLot}
+            maxLength={100}
+            readOnly={!editable}
+            onChange={(e) => setPreviousLot(e.currentTarget.value)}
+          />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 4 }}>
+          <TextInput
+            label={d.lotePosterior}
+            value={newLot}
+            maxLength={100}
+            readOnly={!editable}
+            onChange={(e) => setNewLot(e.currentTarget.value)}
+            description={
+              order.new_lot_by_name
+                ? `${order.new_lot_by_name} · ${formatDateTime(order.new_lot_at)}`
+                : undefined
+            }
+          />
+        </Grid.Col>
+        {editable && (
+          <Grid.Col span={{ base: 12, sm: 4 }}>
+            <Button
+              onClick={() => mutation.mutate()}
+              loading={mutation.isPending}
+              disabled={!changed}
+            >
+              {d.guardarLotes}
+            </Button>
+          </Grid.Col>
+        )}
+      </Grid>
+    </Section>
   );
 }
 
@@ -466,6 +781,17 @@ const HIDDEN_HISTORY_KEYS = new Set([
   "released_reservations",
 ]);
 
+/** Actions whose before/after hold the same keys: shown as "old → new". */
+const DIFF_ACTIONS = new Set([
+  "update",
+  "assign",
+  "expiry",
+  "checklist",
+  "traceability",
+  "materials",
+  "queue",
+]);
+
 function HistoryTab({ order }: { order: Order }) {
   const { data: entries, isLoading } = useQuery({
     queryKey: ["orders", order.id, "history"],
@@ -507,7 +833,13 @@ function HistoryChanges({
   entry: OrderHistoryEntry;
   packagingCodes: Map<number, string>;
 }) {
-  const label = (k: string) => d.campos[k as keyof typeof d.campos] ?? k;
+  const label = (k: string) => {
+    if (k.startsWith("packaging_")) {
+      return `${d.real} ${packagingCodes.get(Number(k.slice(10))) ?? k}`;
+    }
+    if (k in t.checklist) return t.checklist[k as ChecklistItem];
+    return d.campos[k as keyof typeof d.campos] ?? k;
+  };
   if (entry.action === "create") return <Text size="sm">—</Text>;
   if (entry.action === "comment") {
     return (
@@ -516,10 +848,8 @@ function HistoryChanges({
       </Text>
     );
   }
-  const keys =
-    entry.action === "update"
-      ? changedKeys(entry.before, entry.after)
-      : Object.keys(entry.after ?? {});
+  const isDiff = DIFF_ACTIONS.has(entry.action);
+  const keys = isDiff ? changedKeys(entry.before, entry.after) : Object.keys(entry.after ?? {});
   const shown = keys.filter((k) => !HIDDEN_HISTORY_KEYS.has(k));
   if (!shown.length) return <Text size="sm">—</Text>;
   return (
@@ -527,7 +857,7 @@ function HistoryChanges({
       {shown.map((k) => (
         <Text key={k} size="sm">
           <b>{label(k)}:</b>{" "}
-          {entry.action === "update" || k === "status"
+          {isDiff || k === "status"
             ? `${historyValue(k, entry.before?.[k], packagingCodes)} → ${historyValue(
                 k,
                 entry.after?.[k],
@@ -551,6 +881,17 @@ function historyValue(key: string, value: unknown, packagingCodes: Map<number, s
     return t.reworkKinds[value as keyof typeof t.reworkKinds] ?? value;
   }
   if (key === "order_date" && typeof value === "string") return formatPlainDate(value);
+  if (key === "expiry_date" && typeof value === "string") return formatExpiry(value);
+  if (key === "source" && typeof value === "string") {
+    return pr.fuentes[value as keyof typeof pr.fuentes] ?? value;
+  }
+  if (typeof value === "boolean") return value ? t.print.si : "No";
+  if (key === "missing" && Array.isArray(value)) {
+    if (!value.length) return "—";
+    return value
+      .map((m) => pr.cerrar.missing[m as keyof typeof pr.cerrar.missing] ?? String(m))
+      .join(", ");
+  }
   if (key === "warnings" && Array.isArray(value)) {
     if (!value.length) return "—";
     return value

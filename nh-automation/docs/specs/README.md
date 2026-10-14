@@ -6,9 +6,9 @@ Build **one phase per Claude Code session**, in order. Each phase delivers somet
 |---|---|---|---|
 | 0 | `phase-0-foundation.md` | Server skeleton running; login and user management | Done |
 | 1 | `phase-1-catalogs-inventory.md` | Products, packaging, machines; import; stock | Done |
-| 1b | `phase-1b-v2-updates.md` | Razones sociales, Production manager role, permissions, T-/R- sequences, settings (decisions applied to built code) | **Next** |
-| 2 | `phase-2-work-orders.md` | Digital work orders (Producto base / Producto terminado); overselling blocked; comments; printing | |
-| 3 | `phase-3-assignments-operator.md` | Production manager assigns machines, pause/resume, operator station, closing — full process without paper | |
+| 1b | `phase-1b-v2-updates.md` | Razones sociales, Production manager role, permissions, T-/R- sequences, settings (decisions applied to built code) | Done |
+| 2 | `phase-2-work-orders.md` | Digital work orders (Producto base / Producto terminado); overselling blocked; comments; printing | Done |
+| 3 | `phase-3-assignments-operator.md` | Production manager assigns machines, production controls, pause/resume, closing — full process without paper; removes the operator role | **Next** |
 | 4 | `phase-4-plc-database-interface.md` | PLCs read pending orders and write events in the database; document for the PLC programmer | |
 | 6 | `phase-6-dashboard.md` | Production dashboard | |
 
@@ -21,7 +21,7 @@ Every session reads `CLAUDE.md` automatically, which points to `CONTEXT.md`, `00
 Start a **new** Claude Code session in the repository and paste (change the phase):
 
 ```
-Implement phase 1b following docs/specs/phase-1b-v2-updates.md.
+Implement phase 3 following docs/specs/phase-3-assignments-operator.md.
 First read CLAUDE.md, docs/CONTEXT.md, docs/specs/00-overview.md and docs/specs/01-data-model.md.
 Write a short plan before coding. Do not build anything from later phases.
 Finish by checking the "Definition of done" list, running all tests, and updating docs/PROGRESS.md.

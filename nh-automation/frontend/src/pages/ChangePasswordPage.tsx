@@ -1,4 +1,4 @@
-import { Alert, Button, Paper, PasswordInput, Stack, TextInput, Title } from "@mantine/core";
+import { Alert, Button, Paper, PasswordInput, Stack, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useState } from "react";
@@ -10,7 +10,6 @@ import { strings } from "../i18n/strings";
 export function ChangePasswordPage() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newPin, setNewPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -21,13 +20,11 @@ export function ChangePasswordPage() {
     try {
       await authApi.changePassword({
         current_password: currentPassword,
-        new_password: newPassword || undefined,
-        new_pin: newPin || undefined,
+        new_password: newPassword,
       });
       notifications.show({ message: strings.changePassword.exito, color: "green" });
       setCurrentPassword("");
       setNewPassword("");
-      setNewPin("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : strings.common.errorGenerico);
     } finally {
@@ -51,12 +48,8 @@ export function ChangePasswordPage() {
               label={strings.changePassword.nueva}
               value={newPassword}
               onChange={(e) => setNewPassword(e.currentTarget.value)}
-            />
-            <TextInput
-              label={strings.changePassword.nuevoPin}
-              value={newPin}
-              onChange={(e) => setNewPin(e.currentTarget.value.replace(/\D/g, ""))}
-              maxLength={6}
+              required
+              minLength={8}
             />
             {error && (
               <Alert color="red" icon={<IconAlertCircle size={18} />}>

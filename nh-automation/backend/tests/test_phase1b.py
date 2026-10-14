@@ -331,7 +331,7 @@ def test_seed_dev(db_session):
     seed_service.seed_dev(db_session)  # idempotent
     roles = {u.username: u.role for u in db_session.query(User).all()}
     assert roles["jefe"] == "production_manager"
-    assert set(roles.values()) == {"master_admin", "admin", "production_manager", "operator"}
+    assert set(roles.values()) == {"master_admin", "admin", "production_manager"}  # no operator
     products = {p.code: p.razon_social.code for p in db_session.query(Product).all()}
     assert products == {
         "GRN100C1XL20F004": "NB",

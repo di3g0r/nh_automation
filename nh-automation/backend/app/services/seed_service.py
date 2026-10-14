@@ -59,10 +59,8 @@ DEV_USERS = [
     ("director", "Director (dev)", Role.MASTER_ADMIN),
     ("oficina", "Oficina (dev)", Role.ADMIN),
     ("jefe", "Jefe de producción (dev)", Role.PRODUCTION_MANAGER),
-    ("operador", "Operador (dev)", Role.OPERATOR),
 ]
 DEV_PASSWORD = "cambiar-123"
-DEV_PIN = "1234"
 
 
 def ensure_base_catalogs(db: Session) -> Site:
@@ -131,7 +129,6 @@ def seed_dev(db: Session) -> list[str]:
                 User(
                     username=username, full_name=full_name, role=role.value,
                     password_hash=hash_secret(DEV_PASSWORD),
-                    pin_hash=hash_secret(DEV_PIN) if role == Role.OPERATOR else None,
                     is_active=True,
                 )
             )

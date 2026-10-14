@@ -584,7 +584,7 @@ def test_production_manager_edits_and_comments_with_authorship(
     assert update["after"]["packaging"] == [{"packaging_item_id": envase.id, "planned_qty": 50}]
 
 
-def test_comments_any_status_but_not_for_operators(
+def test_comments_any_status(
     client, db_session, base_calcio, nh_calcio, cliente, calcio_stock
 ):
     headers = login_as(client, db_session, "admin")
@@ -596,11 +596,6 @@ def test_comments_any_status_but_not_for_operators(
             headers = login_as(client, db_session, role)
             assert client.post(url, json={"text": f"{role} {status}"},
                                headers=headers).status_code == 201
-
-    headers = login_as(client, db_session, "operator")
-    assert client.post(url, json={"text": "x"}, headers=headers).status_code == 403
-    assert client.get(f"{API}/orders").status_code == 403
-    assert client.get(f"{API}/orders/{order['id']}").status_code == 403
 
     headers = login_as(client, db_session, "admin")
     assert client.post(url, json={"text": "   "}, headers=headers).status_code == 422
@@ -618,9 +613,6 @@ def test_cancel_releases_reservations_and_needs_reason(
         packaging=[{"packaging_item_id": envase.id, "planned_qty": 5}],
     ))
     url = f"{API}/orders/{order['id']}/cancel"
-
-    headers = login_as(client, db_session, "operator")
-    assert client.post(url, json={"reason": "x"}, headers=headers).status_code == 403
 
     headers = login_as(client, db_session, "production_manager")
     assert client.post(url, json={"reason": " "}, headers=headers).status_code == 422
@@ -656,14 +648,11 @@ def test_cancel_refused_after_production_started(
     assert resp.json()["error"]["code"] == "INVALID_TRANSITION"
 
 
-def test_delete_releases_reservations_operator_cannot(
+def test_delete_releases_reservations(
     client, db_session, site, base_calcio, nh_calcio, cliente, calcio_stock
 ):
     headers = login_as(client, db_session, "admin")
     order = _create(client, headers, _payload(cliente.id, [(base_calcio.id, "1000")], nh_calcio.id))
-    headers = login_as(client, db_session, "operator")
-    assert client.delete(f"{API}/orders/{order['id']}", headers=headers).status_code == 403
-
     headers = login_as(client, db_session, "production_manager")
     assert client.delete(f"{API}/orders/{order['id']}", headers=headers).status_code == 204
     assert client.get(f"{API}/orders/{order['id']}").status_code == 404

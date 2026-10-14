@@ -187,3 +187,25 @@ Record decisions made during implementation that are not in the specs (date, dec
   for users with `orders.view`.
 - **404 wording.** `not_found()` uses the feminine form for feminine labels
   (`Orden no encontrada`, `Razón social …`, `Máquina …`, `Secuencia …`).
+
+## 2026-10-13 — Phase 3
+
+- **Queue = pending assignments whose order is ready** (assigned / in progress /
+  paused). Pending assignments of a Creada order (no expiry yet) are listed but
+  skipped, so they never block the machine. Only the first ready one can start.
+- **Start/resume refused on a machine in maintenance** (simplest reading of
+  "maintenance machines cannot be used").
+- **Complete allowed from running or paused**, actual liters >= 0 with 2 decimals.
+- **Replaced/edited splits are deleted** (BR-16 says "deletes"); the audit log
+  keeps them (`removed_assignments`). Cancelled orders mark their assignments
+  `cancelled`.
+- **Reservation consumption** keeps `quantity > 0`: the consumed part becomes
+  its own `consumed` row and the active row shrinks. An exhausted row is marked
+  `consumed`.
+- **Packaging corrections after completion:** more used → `consumption`, less
+  used → `adjustment` back into stock.
+- **Operator login message** only with the correct password; a wrong password
+  gets the generic message.
+- **Expiry:** any day is stored as the 1st of the month. A Trabajo expiry can be
+  cleared (back to Creada); a Retrabajo expiry cannot.
+- `session_timeout_operator_hours` removed (no operators).

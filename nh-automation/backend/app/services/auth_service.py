@@ -1,8 +1,9 @@
-"""Login (password + PIN), lockout, and server-side session management.
+"""Password login, lockout, and server-side session management.
 
-FR-AUTH-1 password login, FR-AUTH-2 operator PIN login, FR-AUTH-3 sessions
-with inactivity timeout (from settings), FR-AUTH-4 lockout after 5 failed
-attempts for 15 minutes.
+FR-AUTH-1 password login, FR-AUTH-3 sessions with inactivity timeout (from
+settings), FR-AUTH-4 lockout after 5 failed attempts for 15 minutes. PIN login
+was removed in phase 3: operators do not use the platform (v3.1), and users
+with the legacy `operator` role cannot log in.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.permissions import Role
 from app.core.security import hash_token, new_token, verify_secret
 from app.core.timezone import ensure_aware, utc_now
 from app.models.session import UserSession
@@ -46,6 +48,17 @@ def _invalid_credentials_error() -> AppError:
     )
 
 
+OPERATOR_MESSAGE = "Los operadores no usan la plataforma."
+
+
+def operator_refused() -> AppError:
+    return AppError("OPERATOR_NO_ACCESS", OPERATOR_MESSAGE, 403)
+
+
+def can_use_platform(user: User) -> bool:
+    return user.role != Role.OPERATOR.value
+
+
 def _check_account_usable(user: User | None) -> User:
     if user is None or not user.is_active:
         raise _invalid_credentials_error()
@@ -62,6 +75,12 @@ def authenticate_password(db: Session, username: str, password: str) -> User:
     from app.services.user_service import get_by_username
 
     user = get_by_username(db, username)
+    if user is not None and not can_use_platform(user):
+        # Former operators (usually deactivated by the phase-3 migration) get a
+        # clear message, but only with the right password.
+        if verify_secret(password, user.password_hash):
+            raise operator_refused()
+        raise _invalid_credentials_error()
     user = _check_account_usable(user)
 
     if not verify_secret(password, user.password_hash):
@@ -72,23 +91,8 @@ def authenticate_password(db: Session, username: str, password: str) -> User:
     return user
 
 
-def authenticate_pin(db: Session, username: str, pin: str) -> User:
-    from app.services.user_service import get_by_username
-
-    user = get_by_username(db, username)
-    user = _check_account_usable(user)
-
-    if not verify_secret(pin, user.pin_hash):
-        _register_failure(db, user)
-        raise AppError("INVALID_CREDENTIALS", "Usuario o PIN incorrectos.", 401)
-
-    _register_success(db, user)
-    return user
-
-
 def _session_ttl_hours(db: Session, role: str) -> int:
-    key = "session_timeout_operator_hours" if role == "operator" else "session_timeout_office_hours"
-    return int(settings_service.get_value(db, key))
+    return int(settings_service.get_value(db, "session_timeout_office_hours"))
 
 
 def create_session(

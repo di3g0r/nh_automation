@@ -28,7 +28,6 @@ const ROLE_OPTIONS: { value: Role; label: string }[] = [
   { value: "master_admin", label: strings.users.roles.master_admin },
   { value: "admin", label: strings.users.roles.admin },
   { value: "production_manager", label: strings.users.roles.production_manager },
-  { value: "operator", label: strings.users.roles.operator },
 ];
 
 export function UsersPage() {
@@ -183,7 +182,6 @@ function CreateUserModal({
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<Role>("admin");
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
@@ -193,7 +191,6 @@ function CreateUserModal({
         full_name: fullName,
         role,
         password,
-        pin: pin || undefined,
       }),
     onSuccess: () => {
       notifications.show({ message: strings.users.creado, color: "green" });
@@ -201,7 +198,6 @@ function CreateUserModal({
       setFullName("");
       setRole("admin");
       setPassword("");
-      setPin("");
       onDone();
       onClose();
     },
@@ -243,12 +239,6 @@ function CreateUserModal({
             value={password}
             onChange={(e) => setPassword(e.currentTarget.value)}
             required
-          />
-          <TextInput
-            label={strings.users.form.pin}
-            value={pin}
-            onChange={(e) => setPin(e.currentTarget.value.replace(/\D/g, ""))}
-            maxLength={6}
           />
           {error && <Text c="red">{error}</Text>}
           <Group justify="end" mt="sm">
@@ -347,19 +337,13 @@ function ResetCredentialsModal({
   onDone: () => void;
 }) {
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const mutation = useMutation({
-    mutationFn: () =>
-      usersApi.resetCredentials(user!.id, {
-        password: password || undefined,
-        pin: pin || undefined,
-      }),
+    mutationFn: () => usersApi.resetCredentials(user!.id, { password }),
     onSuccess: () => {
       notifications.show({ message: strings.users.credencialesRestablecidas, color: "green" });
       setPassword("");
-      setPin("");
       onDone();
       onClose();
     },
@@ -385,12 +369,8 @@ function ResetCredentialsModal({
               label={strings.users.reset.nuevaContrasena}
               value={password}
               onChange={(e) => setPassword(e.currentTarget.value)}
-            />
-            <TextInput
-              label={strings.users.reset.nuevoPin}
-              value={pin}
-              onChange={(e) => setPin(e.currentTarget.value.replace(/\D/g, ""))}
-              maxLength={6}
+              required
+              minLength={8}
             />
             {error && <Text c="red">{error}</Text>}
             <Group justify="end" mt="sm">

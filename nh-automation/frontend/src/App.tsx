@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Layout } from "./components/AppShell/Layout";
 import { RouteGuard } from "./components/RouteGuard";
-import { useAuth } from "./context/AuthContext";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import {
@@ -16,7 +15,7 @@ import {
 import { HomePage } from "./pages/HomePage";
 import { InventoryPage } from "./pages/InventoryPage";
 import { LoginPage } from "./pages/LoginPage";
-import { OperatorStationPage } from "./pages/OperatorStationPage";
+import { MachinesBoardPage } from "./pages/MachinesBoardPage";
 import { OrderDetailPage } from "./pages/orders/OrderDetailPage";
 import { OrderFormPage } from "./pages/orders/OrderFormPage";
 import { OrderPrintPage } from "./pages/orders/OrderPrintPage";
@@ -33,13 +32,6 @@ const CATALOG_ROUTES = [
   { path: "/catalogos/sitios", element: <SitesPage /> },
   { path: "/catalogos/maquinas", element: <MachinesPage /> },
 ];
-
-/** Operators have no "Inicio"; they land on the operator station instead. */
-function IndexRoute() {
-  const { user } = useAuth();
-  if (user?.role === "operator") return <Navigate to="/operador" replace />;
-  return <HomePage />;
-}
 
 export function App() {
   return (
@@ -62,13 +54,20 @@ export function App() {
           </RouteGuard>
         }
       >
-        <Route index path="/" element={<IndexRoute />} />
-        <Route path="/operador" element={<OperatorStationPage />} />
+        <Route index path="/" element={<HomePage />} />
         <Route
           path="/produccion"
           element={
             <RouteGuard permission="orders.assign">
               <ProductionPage />
+            </RouteGuard>
+          }
+        />
+        <Route
+          path="/maquinas"
+          element={
+            <RouteGuard permission="machines.board">
+              <MachinesBoardPage />
             </RouteGuard>
           }
         />

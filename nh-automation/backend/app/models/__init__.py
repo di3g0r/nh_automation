@@ -1,3 +1,4 @@
+from app.models.assignments import Assignment, AssignmentEvent
 from app.models.audit_log import AuditLog
 from app.models.catalogs import Client, Machine, PackagingItem, Product, RazonSocial, Site
 from app.models.orders import (
@@ -34,4 +35,6 @@ __all__ = [
     "OrderChecklistItem",
     "OrderComment",
     "Reservation",
+    "Assignment",
+    "AssignmentEvent",
 ]

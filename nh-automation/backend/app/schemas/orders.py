@@ -8,12 +8,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-OrderType = Literal["trabajo", "retrabajo"]
+from app.schemas.order_types import OrderStatus, OrderType  # noqa: E402
+
 ReworkKind = Literal["previous_order", "own_stock"]
 BarcodeMode = Literal["per_container", "per_box"]
-OrderStatus = Literal[
-    "created", "assigned", "in_progress", "paused", "completed", "closed", "cancelled"
-]
 
 
 def _strip(v: Any) -> Any:
@@ -189,6 +187,22 @@ class OrderOut(BaseModel):
     can_edit: bool
     can_cancel: bool
     can_delete: bool
+    # Phase 3 (status-based too; the API enforces the permissions).
+    can_set_expiry: bool
+    can_assign: bool
+    can_edit_traceability: bool
+    can_close: bool
+    assignments: list[AssignmentOut]
+    assigned_liters: Decimal
+    missing_for_assign: list[MissingForAssign]  # in Creada: what blocks Asignada
+    difference: DifferenceOut | None  # once production ended (BR-12)
+    close_missing: list[MissingForClose]  # listed by the close dialog (BR-11)
+    labels_actual_by_name: str | None
+    labels_actual_at: datetime | None
+    new_lot_by_name: str | None
+    new_lot_at: datetime | None
+    expiry_set_by_name: str | None
+    expiry_set_at: datetime | None
 
 
 class OrderListItem(BaseModel):
@@ -228,7 +242,7 @@ class PrintData(BaseModel):
     order: OrderOut
     comments: list[CommentOut]  # oldest first, as on paper
     created: Signature
-    assigned: Signature | None  # phase 3
+    assigned: Signature | None  # who assigned the machines (latest), and when
     closed: Signature | None
     barcodes: dict[str, str]  # TODO(OPEN-12): label/barcode printing integration
 
@@ -240,3 +254,15 @@ class ReservationHolder(BaseModel):
     status: OrderStatus
     quantity: Decimal
     created_at: datetime
+
+
+# Phase 3 types used by OrderOut (defined in app.schemas.production, which
+# imports OrderStatus/OrderType from here).
+from app.schemas.production import (  # noqa: E402
+    AssignmentOut,
+    DifferenceOut,
+    MissingForAssign,
+    MissingForClose,
+)
+
+OrderOut.model_rebuild()

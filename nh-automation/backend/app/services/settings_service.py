@@ -14,7 +14,6 @@ DEFAULTS: dict[str, Any] = {
     "default_site_id": None,
     "plc_offline_seconds": 60,
     "session_timeout_office_hours": 8,
-    "session_timeout_operator_hours": 12,
     # TODO(OPEN-19): acceptable difference range (BR-12); within range if
     # |difference| <= liters OR <= percent of the ordered liters.
     "difference_tolerance_liters": 0,

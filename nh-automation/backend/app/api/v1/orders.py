@@ -1,8 +1,8 @@
 """Work order endpoints (phase 2).
 
 View: orders.view. Create/edit/delete: orders.edit. Cancel: orders.cancel.
-Comments: orders.comment. Operators have none of these in phase 2; phase 3
-adds their machine-scoped view.
+Comments: orders.comment. Phase-3 order actions (expiry, assignments,
+traceability, closing) live in app/api/v1/production.py.
 """
 
 from __future__ import annotations

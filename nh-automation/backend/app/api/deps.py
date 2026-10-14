@@ -33,7 +33,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise unauthorized()
 
     user = db.get(User, session.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not auth_service.can_use_platform(user):
         raise unauthorized()
 
     if request.method in STATE_CHANGING_METHODS:

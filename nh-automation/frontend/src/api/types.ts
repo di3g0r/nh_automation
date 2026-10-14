@@ -1,3 +1,4 @@
+/** `operator` is legacy (v3.1): such users cannot log in and are not offered in forms. */
 export type Role = "master_admin" | "admin" | "production_manager" | "operator";
 
 export interface User {
@@ -6,7 +7,6 @@ export interface User {
   full_name: string;
   role: Role;
   is_active: boolean;
-  has_pin: boolean;
   failed_attempts: number;
   locked_until: string | null;
   last_login_at: string | null;
@@ -237,13 +237,7 @@ export interface ImportResult {
 export type ReworkKind = "previous_order" | "own_stock";
 export type BarcodeMode = "per_container" | "per_box";
 export type OrderStatus =
-  | "created"
-  | "assigned"
-  | "in_progress"
-  | "paused"
-  | "completed"
-  | "closed"
-  | "cancelled";
+  "created" | "assigned" | "in_progress" | "paused" | "completed" | "closed" | "cancelled";
 export type ChecklistItem = "lote_etiqueta" | "niveles_producto" | "cantidades" | "embalaje";
 
 export interface OrderBaseProduct {
@@ -331,6 +325,22 @@ export interface Order {
   can_edit: boolean;
   can_cancel: boolean;
   can_delete: boolean;
+  // Phase 3 (status-based; the UI also checks permissions).
+  can_set_expiry: boolean;
+  can_assign: boolean;
+  can_edit_traceability: boolean;
+  can_close: boolean;
+  assignments: Assignment[];
+  assigned_liters: string;
+  missing_for_assign: MissingForAssign[];
+  difference: Difference | null;
+  close_missing: MissingForClose[];
+  labels_actual_by_name: string | null;
+  labels_actual_at: string | null;
+  new_lot_by_name: string | null;
+  new_lot_at: string | null;
+  expiry_set_by_name: string | null;
+  expiry_set_at: string | null;
 }
 
 export interface OrderListItem {
@@ -414,4 +424,84 @@ export interface ShortageItem {
   reserved: string;
   available: string;
   orders: { order_id: number; operation_number: string; quantity: string }[];
+}
+
+// Production (phase 3) -----------------------------------------------------------
+
+export type AssignmentStatus = "pending" | "running" | "paused" | "completed" | "cancelled";
+export type MachineState = "free" | "busy" | "paused" | "maintenance";
+export type MissingForAssign = "expiry" | "machines";
+export type MissingForClose = "checklist" | "new_lot" | "materials" | "labels";
+
+export interface Assignment {
+  id: number;
+  order_id: number;
+  operation_number: string;
+  order_type: OrderType;
+  order_status: OrderStatus;
+  finished_code: string;
+  finished_name: string;
+  machine_id: number;
+  machine_code: string;
+  machine_name: string;
+  planned_liters: string;
+  actual_liters: string | null;
+  status: AssignmentStatus;
+  queue_position: number;
+  last_source: "plc" | "manual" | null;
+  assigned_by_name: string;
+  assigned_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  can_start: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
+  can_complete: boolean;
+  start_blocked_reason: string | null;
+}
+
+/** BR-12: negative = Faltante, positive = Excedente. */
+export interface Difference {
+  ordered_liters: string;
+  actual_liters: string;
+  difference: string;
+  within_range: boolean;
+}
+
+export interface ProductionOrder {
+  id: number;
+  operation_number: string;
+  order_type: OrderType;
+  status: OrderStatus;
+  client_name: string | null;
+  razon_social_code: string;
+  finished_code: string;
+  finished_name: string;
+  finished_liters: string;
+  expiry_date: string | null;
+  created_at: string;
+  missing: MissingForAssign[];
+  assigned_liters: string;
+  assignments: Assignment[];
+  difference: Difference | null;
+}
+
+export interface MachineBoardItem {
+  id: number;
+  code: string;
+  name: string;
+  site_name: string;
+  in_maintenance: boolean;
+  state: MachineState;
+  current: Assignment | null;
+  queue_length: number;
+  next_assignment: Assignment | null;
+}
+
+export interface MachineQueue {
+  machine_id: number;
+  machine_code: string;
+  state: MachineState;
+  current: Assignment | null;
+  pending: Assignment[];
 }

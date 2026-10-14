@@ -10,11 +10,13 @@ import { strings } from "../../i18n/strings";
 import { formatDateTime, formatLiters } from "../../utils/datetime";
 import { errorMessage } from "../../utils/notify";
 import { formatExpiry, formatPlainDate } from "../../utils/orders";
+import { differenceKind } from "../../utils/production";
 import { formatUnits } from "../../utils/quantity";
 
 const t = strings.orders;
 const f = t.form;
 const p = t.print;
+const pr = strings.production;
 
 /** Letter-size print layout; screen-only toolbar is hidden when printing. */
 const PRINT_CSS = `
@@ -101,6 +103,15 @@ export function OrderPrintPage() {
   const expiry = order.expiry_date ? formatExpiry(order.expiry_date) : f.caducidadPendiente;
   const signature = (s: { name: string; at: string } | null) =>
     s ? `${s.name} · ${formatDateTime(s.at)}` : "";
+  const assignments = order.assignments.filter((a) => a.status !== "cancelled");
+  const diff = order.difference;
+  const diffText = (() => {
+    if (!diff) return "";
+    const { kind, liters } = differenceKind(diff.difference);
+    if (kind === "none") return pr.sinDiferencia;
+    const label = `${kind === "faltante" ? pr.faltante : pr.excedente} ${formatLiters(liters)}`;
+    return diff.within_range ? label : `${label} (${pr.fueraDeRango})`;
+  })();
 
   return (
     <>
@@ -213,6 +224,41 @@ export function OrderPrintPage() {
           </tbody>
         </table>
 
+        {assignments.length > 0 && (
+          <div className="avoid-break">
+            <h2>{p.maquinas}</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>{p.maquina}</th>
+                  <th>{pr.estado}</th>
+                  <th className="num">{p.planeado}</th>
+                  <th className="num">{p.real}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignments.map((a) => (
+                  <tr key={a.id}>
+                    <td>{a.machine_code}</td>
+                    <td>{pr.asignacion[a.status]}</td>
+                    <td className="num">{formatLiters(a.planned_liters)}</td>
+                    <td className="num">
+                      {a.actual_liters === null ? "" : formatLiters(a.actual_liters)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {diff && (
+              <div className="grid" style={{ marginTop: 4 }}>
+                <Cell label={pr.ordenado} value={formatLiters(diff.ordered_liters)} />
+                <Cell label={pr.real} value={formatLiters(diff.actual_liters)} />
+                <Cell label={pr.diferencia} value={diffText} />
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="avoid-break">
           <h2>{f.secciones.empaque}</h2>
           <table>
@@ -262,7 +308,9 @@ export function OrderPrintPage() {
                   <td style={{ width: 24, textAlign: "center" }}>{c.checked ? "☑" : "☐"}</td>
                   <td>{t.checklist[c.item]}</td>
                   <td style={{ width: "40%" }}>
-                    {c.checked_by_name ? `${c.checked_by_name} · ${formatDateTime(c.checked_at)}` : ""}
+                    {c.checked_by_name
+                      ? `${c.checked_by_name} · ${formatDateTime(c.checked_at)}`
+                      : ""}
                   </td>
                 </tr>
               ))}
@@ -308,6 +356,7 @@ export function OrderPrintPage() {
             <Cell label={p.elaboro} value={signature(data.created)} />
             <Cell label={p.asigno} value={signature(data.assigned)} />
             <Cell label={p.cerro} value={signature(data.closed)} />
+            {order.close_note && <Cell label={p.notaCierre} value={order.close_note} span={3} />}
           </div>
           <div className="barcodes">
             <Barcode value={data.barcodes.operation_number} />

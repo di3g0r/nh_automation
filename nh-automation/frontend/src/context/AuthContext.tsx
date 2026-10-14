@@ -9,7 +9,6 @@ interface AuthContextValue {
   user: Me | null;
   loading: boolean;
   loginWithPassword: (username: string, password: string) => Promise<void>;
-  loginWithPin: (username: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   hasPermission: (permission: string) => boolean;
 }
@@ -45,14 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  const loginWithPin = useCallback(
-    async (username: string, pin: string) => {
-      await authApi.pinLogin(username, pin);
-      await refresh();
-    },
-    [refresh],
-  );
-
   const logout = useCallback(async () => {
     await authApi.logout();
     setUser(null);
@@ -65,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, loginWithPassword, loginWithPin, logout, hasPermission }}
+      value={{ user, loading, loginWithPassword, logout, hasPermission }}
     >
       {children}
     </AuthContext.Provider>

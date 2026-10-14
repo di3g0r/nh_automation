@@ -3,6 +3,7 @@
 > Status: v2 — 2026-10-09 (v1: 2026-10-06). Shared by every phase. Read `docs/CONTEXT.md` first.
 > v2 changes: razones sociales, supervisor can cancel, PLC talks to the database (no PLC HTTP API), no VPN, backups kept but optional, open items updated.
 > v2.1: phase 4 slimmed down (no simulator, no troubleshooting page); phase 5 removed and merged into phase 4's handover checklist.
+> v3.1 (2026-10-13): operators do not use the platform (PLC screen only): no operator role in the UI, no operator station, no PIN login.
 > v3 (2026-10-13): Production manager role replaces supervisor; new permission set; Producto base / Producto terminado; T-/R- numbering; pause; open items updated.
 
 ## 1. Document map
@@ -15,7 +16,7 @@
 | `phase-1-catalogs-inventory.md` | Products, packaging, clients, sites, machines, imports, stock | Done |
 | `phase-1b-v2-updates.md` | Apply the v2/v3 decisions to code already built (razones sociales, Production manager role, permissions, sequences, settings) | Done |
 | `phase-2-work-orders.md` | Work orders (one or more base products), numbering, reservations, overselling block, comments, printing | Done |
-| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, pause/resume, operator station, completion, closing | **Next** |
+| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, production controls, completion, closing; removes the operator role from the UI | **Next** |
 | `phase-4-plc-database-interface.md` | Database views and event table the PLCs use; event processing; document and handover checklist for the PLC programmer | |
 | `phase-6-dashboard.md` | Production dashboard | |
 
@@ -39,9 +40,7 @@ Use current stable versions.
 ## 3. Architecture
 
 ```
- Office PCs ───────(LAN)──┐
-                          ▼
- Operator devices ─(LAN)──► Caddy (HTTPS) ──► Frontend (static React build)
+ Office / production PCs ─(LAN)──► Caddy (HTTPS) ──► Frontend (static React build)
                                   │
                                   └──► API (FastAPI) ──► PostgreSQL ◄──(restricted DB login)── PLCs (≈6)
                                                              ▲           reads pending orders,
@@ -49,7 +48,7 @@ Use current stable versions.
  Backup job ──► nightly database dump (optional, kept)
 ```
 
-- **Web app**: office screens and the operator station (same app, role-based views).
+- **Web app**: used by the office and the Production manager only. **Operators never use it**; they work with the PLC screen of their machine (CONTEXT §9).
 - **API** (`/api/v1`): the only entry point for the web app; all business rules live here.
 - **PLC database interface** (phase 4): each PLC logs into PostgreSQL with its own restricted user, **reads** its pending assignments from a view and **inserts** action events into an inbox table. It cannot read or change anything else.
 - **Event processor** (phase 4): part of the backend; applies PLC events to assignments through the same service functions as manual actions, so business rules stay in one place.
@@ -69,27 +68,27 @@ CLAUDE.md
 
 ## 4. Roles and permissions
 
-Roles: **master_admin** (director), **admin** (office), **production_manager** (*Jefe de producción*, the link between office and operators), **operator** (machines). There is **no supervisor role** (v3).
+Roles: **master_admin** (director), **admin** (office), **production_manager** (*Jefe de producción*, the link between office and operators). There is **no supervisor** and **no operator role** in the UI (v3.1): operators work only with the PLC screen. The value `operator` stays allowed in the database constraint only so old rows remain valid; such users cannot log in.
 
-| Permission | Master admin | Admin | Production manager | Operator |
-|---|---|---|---|---|
-| `users.manage` | ✅ | ❌ | ❌ | ❌ |
-| `catalogs.manage` (products, packaging, razones sociales, clients, sites, machines) | ✅ | ✅ | ❌ | ❌ |
-| `sequences.manage` (next Trabajo / Retrabajo number) | ✅ | ❌ | ❌ | ❌ |
-| `inventory.view` | ✅ | ✅ | ✅ | ❌ |
-| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ❌ | ❌ |
-| `orders.view` (all orders) | ✅ | ✅ | ✅ | ❌ (only orders on the machine they work at) |
-| `orders.edit` (create; edit and delete before production starts) | ✅ | ✅ | ✅ | ❌ |
-| `orders.comment` (add comments at any time) | ✅ | ✅ | ✅ | ❌ |
-| `orders.assign` (assign/reassign machines before production starts) | ✅ | ❌ | ✅ | ❌ |
-| `orders.expiry` (enter expiry date) | ✅ | ❌ | ✅ | ❌ |
-| `orders.traceability` (lots, checklist, actual materials and labels — who is recorded) | ✅ | ✅ | ✅ | ✅ |
-| `production.control` (start, pause, resume, complete manually) | ✅ | ✅ | ✅ | ✅ |
-| `orders.cancel` (only before production starts) | ✅ | ✅ | ✅ | ❌ |
-| `orders.close` (approve and close completed orders) | ✅ | ❌ | ✅ | ❌ |
-| `machines.board` | ✅ | ✅ | ✅ | ❌ |
-| `machines.plc_credentials` (create/rotate PLC database logins) | ✅ | ❌ | ❌ | ❌ |
-| `audit.view`, `settings.manage` | ✅ | ❌ | ❌ | ❌ |
+| Permission | Master admin | Admin | Production manager |
+|---|---|---|---|
+| `users.manage` | ✅ | ❌ | ❌ |
+| `catalogs.manage` (products, packaging, razones sociales, clients, sites, machines) | ✅ | ✅ | ❌ |
+| `sequences.manage` (next Trabajo / Retrabajo number) | ✅ | ❌ | ❌ |
+| `inventory.view` | ✅ | ✅ | ✅ |
+| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ❌ |
+| `orders.view` (all orders) | ✅ | ✅ | ✅ |
+| `orders.edit` (create; edit and delete before production starts) | ✅ | ✅ | ✅ |
+| `orders.comment` (add comments at any time) | ✅ | ✅ | ✅ |
+| `orders.assign` (assign/reassign machines before production starts) | ✅ | ❌ | ✅ |
+| `orders.expiry` (enter expiry date) | ✅ | ❌ | ✅ |
+| `orders.traceability` (lots, checklist, actual materials and labels — who is recorded) | ✅ | ✅ | ✅ |
+| `production.control` (start, pause, resume, complete from the platform — fallback to the PLC) | ✅ | ❌ | ✅ |
+| `orders.cancel` (only before production starts) | ✅ | ✅ | ✅ |
+| `orders.close` (approve and close completed orders) | ✅ | ❌ | ✅ |
+| `machines.board` | ✅ | ✅ | ✅ |
+| `machines.plc_credentials` (create/rotate PLC database logins) | ✅ | ❌ | ❌ |
+| `audit.view`, `settings.manage` | ✅ | ❌ | ❌ |
 
 The role → permissions map lives in **one module**. Endpoints check permissions, not roles.
 
@@ -107,9 +106,9 @@ The role → permissions map lives in **one module**. Endpoints check permission
 - All text in Spanish, kept in one translation/strings module (no hard-coded text scattered in components).
 - Dates `dd/mm/aaaa`, 24-hour time, America/Mazatlan. Liters as `1,000.00 L`.
 - Office navigation: **Inicio, Producción, Órdenes, Máquinas, Inventario, Catálogos** (Productos, Materiales de empaque, Razones sociales, Clientes, Sitios, Máquinas), **Usuarios, Bitácora, Configuración**. Items hidden when the user lacks permission.
-- Operators land on **Estación de operador** (touch-friendly, large buttons). The Production manager lands on **Producción** (new orders to assign, completed orders to close).
+- The Production manager lands on **Producción** (new orders to assign, orders in production, completed orders to close). There is no operator station.
 - Consistent color-coded status badges. Clear Spanish error messages from the API.
-- Works on Chrome/Edge (PC) and Chrome on Android tablets; responsive down to 360 px width.
+- Works on Chrome/Edge on PCs; usable on smaller screens (responsive down to 360 px) for occasional checks.
 
 ## 7. Non-functional requirements
 
@@ -121,7 +120,7 @@ The role → permissions map lives in **one module**. Endpoints check permission
 - **NFR-6 Auditability:** no hard deletes of business records except orders in *Creada*.
 - **NFR-7 Localization:** UI in Spanish (es-MX).
 - **NFR-7a Time zone:** America/Mazatlan (UTC−7, no DST). Store UTC; display local everywhere (screens, prints, exports, history, audit). "Today" and daily grouping use the local day. PLC timestamps without offset are local. Single setting `TZ=America/Mazatlan`.
-- **NFR-8 Browsers:** current Chrome and Edge; Chrome on Android.
+- **NFR-8 Browsers:** current Chrome and Edge on PCs.
 - **NFR-9 Maintainability:** typed code; linters/formatters (ruff, mypy, eslint, prettier); tests for every business rule in `01-data-model.md` §4; migrations only; README for the IT person.
 
 ## 8. Deployment
@@ -152,7 +151,7 @@ Numbering matches `CONTEXT.md` §13. Implement the default; mark code with `TODO
 | OPEN-6 | PLC brand/model | Open — only to confirm direct DB access vs a small HTTP gateway |
 | OPEN-7 | System → PLC mechanism | **Resolved:** PLC polls the database |
 | OPEN-8 | Server down during production | **Resolved:** nothing is done |
-| OPEN-9 | Operator device | Open — responsive web, tablet-first |
+| OPEN-9 | Operator device | **Resolved (v3.1):** operators use only the PLC screen; they never log in |
 | OPEN-10 | Supervisor role | **Resolved (v3):** no supervisor; replaced by the Production manager |
 | OPEN-11 | Cancellation rules | **Resolved:** all except operators; only before production starts |
 | OPEN-12 | Label/barcode printing | Open — printable order with barcode |

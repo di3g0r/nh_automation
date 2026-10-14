@@ -1,10 +1,11 @@
-"""Work orders (phase 2): create, edit, delete, cancel, comments, history,
-list and print data.
+"""Work orders: create, edit, delete, cancel, comments, history, list and
+print data (phase 2); expiry, traceability, materials and closing (phase 3).
 
 Business rules implemented here (data model §4): BR-2/3/4/10 through
-reservation_service, BR-6 (only created -> cancelled and delete in phase 2),
-BR-16 (editing), BR-17 (delete/cancel), BR-18 (audit), BR-19 (numbering),
-BR-20 (expiry copy for rework), BR-21 (type / rework kinds), BR-22 (razón social).
+reservation_service, BR-6, BR-11 (closing), BR-16 (editing, also in Asignada),
+BR-17 (delete/cancel), BR-18 (audit), BR-19 (numbering), BR-20 (expiry),
+BR-21 (type / rework kinds), BR-22 (razón social), BR-24 (traceability).
+Machine assignments and production actions live in assignment_service.
 Every public write runs in one transaction and commits once at the end; any
 AppError leaves the transaction uncommitted (nothing is saved, no number is
 consumed).
@@ -48,13 +49,31 @@ from app.schemas.orders import (
     PrintData,
     Signature,
 )
-from app.services import audit_service, catalog_service, reservation_service, sequence_service
+from app.schemas.production import (
+    ChecklistIn,
+    MaterialsIn,
+    MissingForClose,
+    TraceabilityIn,
+)
+from app.services import (
+    assignment_service,
+    audit_service,
+    catalog_service,
+    production_service,
+    reservation_service,
+    sequence_service,
+)
 from app.services.reservation_service import PackagingNeed, ProductNeed
 
-# TODO(phase 3): editing is also allowed in "assigned" (BR-16); a change of
-# base products, liters or finished product then deletes the assignments and
-# returns the order to "created".
-EDITABLE_STATUSES = frozenset({"created"})
+# BR-16: editable while nothing has started. Changing base products, liters or
+# the finished product of an assigned order deletes its assignments.
+EDITABLE_STATUSES = frozenset({"created", "assigned"})
+EXPIRY_STATUSES = frozenset({"created", "assigned"})  # BR-20: until production starts
+# BR-24: lots, checklist and actual materials are editable until the order is
+# closed (closed orders are read-only except comments, BR-11).
+TRACEABILITY_STATUSES = frozenset(
+    {"created", "assigned", "in_progress", "paused", "completed"}
+)
 CANCELLABLE_STATUSES = frozenset({"created", "assigned"})  # BR-17
 DELETABLE_STATUSES = frozenset({"created"})  # BR-17
 RELATED_ORDER_STATUSES = ("completed", "closed")  # BR-21
@@ -515,7 +534,12 @@ def update_order(db: Session, order_id: int, data: OrderUpdate, *, actor: User) 
     if "order_date" in sent and data.order_date is not None:
         order.order_date = data.order_date
     new_finished = data.finished_product_id
-    if new_finished is not None and new_finished != order.finished_product_id:
+    finished_changed = new_finished is not None and new_finished != order.finished_product_id
+    liters_changed = (
+        data.finished_liters is not None
+        and Decimal(data.finished_liters) != Decimal(order.finished_liters)
+    )
+    if finished_changed and new_finished is not None:
         finished = catalog_service.get(db, Product, new_finished)
         catalog_service.require_active(finished, f"El producto {finished.code}")
         _set_finished(order, finished)
@@ -568,7 +592,17 @@ def update_order(db: Session, order_id: int, data: OrderUpdate, *, actor: User) 
         order.warnings = warnings
     db.flush()
 
+    # BR-16: the split no longer matches -> delete it; the Production manager
+    # assigns again. Then created <-> assigned is recomputed (the expiry may
+    # also have been cleared by a rework kind change).
+    removed: list[dict[str, Any]] = []
+    if products_changed or finished_changed or liters_changed:
+        removed = assignment_service.delete_for_edit(db, order)
+    assignment_service.refresh_pre_production_status(db, order)
+
     after = _audit_snapshot(order)
+    if removed:
+        after["removed_assignments"] = removed
     if after != before:
         _audit(db, order, "update", actor, before, after)
     if data.comment:
@@ -590,6 +624,7 @@ def delete_order(db: Session, order_id: int, *, actor: User) -> None:
     )
     before = _audit_snapshot(order)
     released = reservation_service.release_for_order(db, order)  # BR-10
+    assignment_service.delete_for_edit(db, order)
     _audit(db, order, "delete", actor, before, {"released_reservations": released})
     db.delete(order)
     db.commit()
@@ -602,8 +637,8 @@ def cancel_order(db: Session, order_id: int, reason: str, *, actor: User) -> Wor
         order, CANCELLABLE_STATUSES, "INVALID_TRANSITION",
         "Solo se pueden cancelar órdenes antes de que inicie la producción.",
     )
-    # TODO(phase 3): cancel the order's pending assignments as well.
     before_status = order.status
+    cancelled_assignments = assignment_service.cancel_for_order(db, order, actor)
     released = reservation_service.release_for_order(db, order)
     order.status = "cancelled"
     order.cancelled_by = actor.id
@@ -612,7 +647,189 @@ def cancel_order(db: Session, order_id: int, reason: str, *, actor: User) -> Wor
     db.flush()
     _audit(
         db, order, "cancel", actor, {"status": before_status},
-        {"status": "cancelled", "cancel_reason": reason, "released_reservations": released},
+        {
+            "status": "cancelled", "cancel_reason": reason, "released_reservations": released,
+            "cancelled_assignments": cancelled_assignments,
+        },
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+# Expiry (BR-20) -----------------------------------------------------------------
+
+
+def _first_of_month(value: date) -> date:
+    """TODO(OPEN-4): stored as the 1st of the month, shown MM/AAAA."""
+    return value.replace(day=1)
+
+
+def set_expiry(db: Session, order_id: int, value: date | None, *, actor: User) -> WorkOrder:
+    """Trabajo: editable (or cleared) until production starts. Retrabajo de
+    orden anterior: copied and locked. Retrabajo de inventario propio: entered
+    once, then locked. Setting it may complete Asignada (BR-20)."""
+    order = get_order(db, order_id, lock=True)
+    _require_status(
+        order, EXPIRY_STATUSES, "EXPIRY_LOCKED",
+        "La fecha de caducidad ya no se puede cambiar: la producción ya inició o la orden "
+        "está cerrada o cancelada.",
+    )
+    if expiry_locked(order):
+        raise AppError(
+            "EXPIRY_LOCKED", "La fecha de caducidad de este retrabajo no se puede cambiar.", 409,
+            {"rework_kind": order.rework_kind},
+        )
+    if value is None and order.order_type == "retrabajo":
+        raise _invalid("EXPIRY_REQUIRED", "Ingrese la fecha de caducidad.")
+    new_value = _first_of_month(value) if value is not None else None
+    before = {
+        "expiry_date": order.expiry_date.isoformat() if order.expiry_date else None,
+        "status": order.status,
+    }
+    order.expiry_date = new_value
+    order.expiry_set_by = actor.id
+    order.expiry_set_at = utc_now()
+    db.flush()
+    assignment_service.refresh_pre_production_status(db, order)
+    after = {
+        "expiry_date": new_value.isoformat() if new_value else None,
+        "status": order.status,
+    }
+    if after != before:
+        _audit(db, order, "expiry", actor, before, after)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+# Traceability (BR-24) and materials ------------------------------------------------
+
+
+def _require_traceability(order: WorkOrder) -> None:
+    _require_status(
+        order, TRACEABILITY_STATUSES, "ORDER_READ_ONLY",
+        "La orden está cerrada o cancelada: solo se pueden agregar comentarios.",
+    )
+
+
+def update_checklist(db: Session, order_id: int, data: ChecklistIn, *, actor: User) -> WorkOrder:
+    """Each change records who and when (also when an item is unchecked)."""
+    order = get_order(db, order_id, lock=True)
+    _require_traceability(order)
+    rows = {c.item: c for c in order.checklist}
+    now = utc_now()
+    changes: dict[str, list[bool]] = {}
+    for entry in data.items:
+        row = rows.get(entry.item)
+        if row is None:  # orders always have the 4 rows; be lenient with old data
+            row = OrderChecklistItem(item=entry.item, checked=False)
+            order.checklist.append(row)
+        if bool(row.checked) != entry.checked:
+            changes[entry.item] = [bool(row.checked), entry.checked]
+            row.checked = entry.checked
+            row.checked_by = actor.id
+            row.checked_at = now
+    db.flush()
+    if changes:
+        _audit(
+            db, order, "checklist", actor,
+            {k: v[0] for k, v in changes.items()}, {k: v[1] for k, v in changes.items()},
+        )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def update_traceability(
+    db: Session, order_id: int, data: TraceabilityIn, *, actor: User
+) -> WorkOrder:
+    """Lote posterior (who/when recorded) and lote anterior. TODO(OPEN-4)."""
+    order = get_order(db, order_id, lock=True)
+    _require_traceability(order)
+    sent = data.model_fields_set
+    before: dict[str, Any] = {}
+    after: dict[str, Any] = {}
+    if "new_lot" in sent and data.new_lot != order.new_lot:
+        before["new_lot"], after["new_lot"] = order.new_lot, data.new_lot
+        order.new_lot = data.new_lot
+        order.new_lot_by = actor.id
+        order.new_lot_at = utc_now()
+    if "previous_lot" in sent and data.previous_lot != order.previous_lot:
+        before["previous_lot"], after["previous_lot"] = order.previous_lot, data.previous_lot
+        order.previous_lot = data.previous_lot
+    db.flush()
+    if after:
+        _audit(db, order, "traceability", actor, before, after)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def update_materials(db: Session, order_id: int, data: MaterialsIn, *, actor: User) -> WorkOrder:
+    """Actual packaging and labels used (who/when recorded). Packaging is
+    consumed when the order completes; changes after that (before closing)
+    write only the difference (BR-8)."""
+    order = get_order(db, order_id, lock=True)
+    _require_traceability(order)
+    rows = {p.packaging_item_id: p for p in order.packaging}
+    now = utc_now()
+    before: dict[str, Any] = {}
+    after: dict[str, Any] = {}
+    for entry in data.packaging:
+        row = rows.get(entry.packaging_item_id)
+        if row is None:
+            raise _invalid(
+                "PACKAGING_NOT_IN_ORDER", "El material no forma parte de la orden.",
+                {"packaging_item_id": entry.packaging_item_id},
+            )
+        if row.actual_qty != entry.actual_qty:
+            key = f"packaging_{row.packaging_item_id}"
+            before[key], after[key] = row.actual_qty, entry.actual_qty
+            row.actual_qty = entry.actual_qty
+            row.actual_by = actor.id
+            row.actual_at = now
+    if "labels_actual" in data.model_fields_set and data.labels_actual != order.labels_actual:
+        before["labels_actual"], after["labels_actual"] = order.labels_actual, data.labels_actual
+        order.labels_actual = data.labels_actual
+        order.labels_actual_by = actor.id
+        order.labels_actual_at = now
+    db.flush()
+    if after and order.status == "completed":
+        corrections = assignment_service.correct_packaging(db, order, actor)
+        if corrections:
+            after["stock_corrections"] = corrections
+    if after:
+        _audit(db, order, "materials", actor, before, after)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+# Closing (BR-11) -----------------------------------------------------------------------
+
+
+def close_order(db: Session, order_id: int, note: str | None, *, actor: User) -> WorkOrder:
+    """Completada -> Cerrada. Allowed with any difference and with incomplete
+    checklist/lot/materials (the dialog lists them); optional note."""
+    order = get_order(db, order_id, lock=True)
+    _require_status(
+        order, frozenset({"completed"}), "INVALID_TRANSITION",
+        "Solo se pueden cerrar órdenes completadas.",
+    )
+    live = assignment_service.order_assignments(db, order.id, include_cancelled=False)
+    diff = production_service.difference(db, order, live)
+    order.status = "closed"
+    order.closed_by = actor.id
+    order.closed_at = utc_now()
+    order.close_note = note
+    db.flush()
+    _audit(
+        db, order, "close", actor, {"status": "completed"},
+        {
+            "status": "closed", "close_note": note, "difference": str(diff.difference),
+            "within_range": diff.within_range, "missing": close_missing(order),
+        },
     )
     db.commit()
     db.refresh(order)
@@ -674,13 +891,33 @@ def history(db: Session, order_id: int) -> list[HistoryEntry]:
 # Read models --------------------------------------------------------------------
 
 
+def close_missing(order: WorkOrder) -> list[MissingForClose]:
+    """What the close dialog lists as incomplete (never blocks closing, BR-11)."""
+    missing: list[MissingForClose] = []
+    if not all(c.checked for c in order.checklist):
+        missing.append("checklist")
+    if not order.new_lot:
+        missing.append("new_lot")
+    if any(p.actual_qty is None for p in order.packaging):
+        missing.append("materials")
+    if order.labels_actual is None:
+        missing.append("labels")
+    return missing
+
+
 def order_out(db: Session, order: WorkOrder) -> OrderOut:
     names = _user_names(
         db,
-        {order.created_by, order.cancelled_by, order.closed_by}
+        {
+            order.created_by, order.cancelled_by, order.closed_by, order.labels_actual_by,
+            order.new_lot_by, order.expiry_set_by,
+        }
         | {p.actual_by for p in order.packaging}
         | {c.checked_by for c in order.checklist},
     )
+    assignments = assignment_service.order_assignments(db, order.id)
+    live = [a for a in assignments if a.status != "cancelled"]
+    ended = order.status in production_service.ENDED_STATUSES
     client = db.get(Client, order.client_id) if order.client_id else None
     rs = db.get(RazonSocial, order.razon_social_id)
     site = db.get(Site, order.site_id)
@@ -766,6 +1003,24 @@ def order_out(db: Session, order: WorkOrder) -> OrderOut:
         can_edit=order.status in EDITABLE_STATUSES,
         can_cancel=order.status in CANCELLABLE_STATUSES,
         can_delete=order.status in DELETABLE_STATUSES,
+        can_set_expiry=order.status in EXPIRY_STATUSES and not expiry_locked(order),
+        can_assign=order.status in assignment_service.PRE_PRODUCTION_STATUSES,
+        can_edit_traceability=order.status in TRACEABILITY_STATUSES,
+        can_close=order.status == "completed",
+        assignments=production_service.assignment_rows(db, assignments),
+        assigned_liters=assignment_service.planned_total(live),
+        missing_for_assign=(
+            production_service.missing_for_assign(order, live)
+            if order.status == "created" else []
+        ),
+        difference=production_service.difference(db, order, live) if ended else None,
+        close_missing=close_missing(order) if order.status in ("completed", "closed") else [],
+        labels_actual_by_name=names.get(order.labels_actual_by) if order.labels_actual_by else None,
+        labels_actual_at=order.labels_actual_at,
+        new_lot_by_name=names.get(order.new_lot_by) if order.new_lot_by else None,
+        new_lot_at=order.new_lot_at,
+        expiry_set_by_name=names.get(order.expiry_set_by) if order.expiry_set_by else None,
+        expiry_set_at=order.expiry_set_at,
     )
 
 
@@ -849,11 +1104,15 @@ def print_data(db: Session, order_id: int) -> PrintData:
     """FR-ORD-6: everything the printable form needs."""
     order = get_order(db, order_id)
     out = order_out(db, order)
+    latest = max(
+        (a for a in out.assignments if a.status != "cancelled"),
+        key=lambda a: a.assigned_at, default=None,
+    )
     return PrintData(
         order=out,
         comments=list_comments(db, order_id, newest_first=False),
         created=Signature(name=out.created_by_name, at=order.created_at),
-        assigned=None,  # TODO(phase 3): who assigned the machines, and when
+        assigned=Signature(name=latest.assigned_by_name, at=latest.assigned_at) if latest else None,
         closed=(
             Signature(name=out.closed_by_name, at=order.closed_at)
             if out.closed_by_name and order.closed_at else None

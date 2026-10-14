@@ -42,7 +42,7 @@ async def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
 
 
 # Labels whose head noun is feminine in Spanish ("Orden no encontrada").
-_FEMININE_LABELS = ("Orden", "Razón social", "Máquina", "Secuencia")
+_FEMININE_LABELS = ("Orden", "Razón social", "Máquina", "Secuencia", "Asignación")
 
 
 def not_found(entity_label: str) -> AppError:

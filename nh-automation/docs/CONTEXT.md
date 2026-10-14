@@ -2,6 +2,7 @@
 
 > Status: v3 — 2026-10-13 (v2: 2026-10-09, v1: 2026-10-06)
 > This document describes the business, the problem, and the decisions made so far. It is the base for the specifications in `docs/specs/`. Items marked **[OPEN]** are not decided yet.
+> v3.1 (2026-10-13): **operators do not use the platform** — they only see the PLC screen on their machine; the operator role and operator station are dropped.
 > v3 changes: new **Production manager** role (replaces the supervisor); ANTES/DESPUÉS renamed **Producto base / Producto terminado**; separate numbering for Trabajo (`T-`) and Retrabajo (`R-`); orders can be **paused**; expiry entered by the Production manager (3-year default removed); no office approval step; orders editable until production starts; machines assigned without a specific operator.
 
 ---
@@ -35,11 +36,11 @@ Clients call the office to order product. The office then creates an internal **
 
 - Replace paper work orders with digital ones (labels will still be printed).
 - Let the Production manager see new orders, complete them (expiry, comments) and assign them to machines.
-- Let machines (PLCs) pick up their pending orders and record production progress in the database.
+- Let machines (PLCs) pick up their pending orders, show them to the operator on the machine's own screen, and record production progress in the database.
 - Let the Production manager review completed orders and close them.
 - Keep inventory (products and packaging materials) in the system's database, imported from the company's existing database.
 - Prevent creating orders for stock that is already committed.
-- Later: a dashboard of daily production by machine, operator, product, etc.
+- Later: a dashboard of daily production by machine, product, etc.
 
 ## 5. Scope
 
@@ -49,7 +50,7 @@ Clients call the office to order product. The office then creates an internal **
 - Catalogs: products, packaging materials, razones sociales, clients, sites, machines.
 - Inventory with reservation.
 - Assignment of orders to one or more machines by the Production manager.
-- Operator view of the machine's orders (pause/resume, checklist, materials used).
+- Production controls in the platform for the Production manager (start, pause, resume, complete) — used before the PLCs are connected and as a fallback.
 - **Database interface for the PLCs**: where they read pending orders and write their progress (see §9).
 
 **Out of scope**
@@ -59,7 +60,7 @@ Clients call the office to order product. The office then creates an internal **
 - Handling server or network outages (if the server is down, nothing is done).
 
 **Later**
-- Production dashboard (by day, machine, operator, product).
+- Production dashboard (by day, machine, product).
 - Label and barcode printing integration **[OPEN]**.
 
 ## 6. The work order
@@ -101,14 +102,14 @@ Based on the current paper forms (*Orden de Trabajo* and *Orden de Retrabajo*).
 
 The list is not complete; packaging is a managed catalog.
 
-**Quality checklist** — normally filled by the Production manager, but any user can fill it; the system records who and when:
+**Quality checklist** — normally filled by the Production manager, but any platform user can fill it; the system records who and when:
 - Revisión de lote y etiqueta
 - Revisión de niveles de producto
 - Revisión de cantidades
 - Embalaje
 
 **Traceability**
-- Previous lot (*Lote anterior*) and new lot (*Lote posterior*). Normally filled by the Production manager, but any user can; the system records who. **[OPEN: lot format]**
+- Previous lot (*Lote anterior*) and new lot (*Lote posterior*). Normally filled by the Production manager, but any platform user can; the system records who. **[OPEN: lot format]**
 - **Expiry date** (*Fecha de caducidad*):
   - Left **blank** when the order is created. The **Production manager** enters it.
   - **An order cannot start production without an expiry date.**
@@ -118,7 +119,7 @@ The list is not complete; packaging is a managed catalog.
   - On the paper form it appears as e.g. `0326/0329` **[OPEN: exact display format]**.
 - Barcode option: 1 barcode per container, or 2 barcodes per box.
 
-**Signatures → system actions** (recorded as user + timestamp): creation (admin), assignment (Production manager), production actions (operator/PLC), closing (Production manager).
+**Signatures → system actions** (recorded as user + timestamp): creation (admin), assignment (Production manager), production actions (PLC, or a platform user as fallback), closing (Production manager).
 
 ## 7. Order lifecycle
 
@@ -130,7 +131,7 @@ Creada → Asignada → En proceso ⇄ Pausada → Completada → Cerrada
 - **Creada**: an admin enters the order; inventory is reserved. The Production manager sees all new orders.
 - **Asignada**: the Production manager has entered the expiry date and assigned the order to **one or more machines** (typically 2 when split). The machine quantities must **add up exactly** to the order quantity (e.g. 100 L = 70 L on machine 1 + 30 L on machine 4). The order is now visible to those machines' PLCs.
 - **En proceso**: production started on at least one machine (written by the PLC, or manually).
-- **Pausada**: production stopped without being finished or cancelled — for example, the shift ended. Any user can pause (normally the operator or the PLC). Each machine pauses independently; the order shows *Pausada* when none of its machines is running. A paused order resumes on the **same machine** **[OPEN: whether the remainder can be moved to another machine]**.
+- **Pausada**: production stopped without being finished or cancelled — for example, the shift ended. Normally the operator pauses **on the PLC screen** and the PLC writes it; platform users can also pause from the system. Each machine pauses independently; the order shows *Pausada* when none of its machines is running. A paused order resumes on the **same machine** **[OPEN: whether the remainder can be moved to another machine]**.
 - **Completada**: every machine has finished (normally the PLC marks it). The real quantity and the difference are shown to the Production manager.
 - **Cerrada**: the Production manager reviewed and approved the completed order (including any difference within or outside the acceptable range).
 
@@ -138,9 +139,9 @@ Creada → Asignada → En proceso ⇄ Pausada → Completada → Cerrada
 
 **Editing:** an order can be edited as many times as needed **before production starts**, by the admin or the Production manager. If the products or quantities change after machines were assigned, the assignment is removed and the Production manager assigns it again. Once production has started, the order cannot be edited (comments can still be added).
 
-**Cancellation:** any user except operators can cancel an order, **only before production starts**.
+**Cancellation:** any platform user can cancel an order, **only before production starts**.
 
-**The operator** is whoever works on the assigned machine; orders are assigned to machines, not to specific operators. The system records which user (or PLC) performed each action.
+**Operators do not use the platform.** They work only with the PLC screen of their machine, which shows that machine's orders. Orders are assigned to machines, not to specific operators. The system records which platform user or which machine (PLC) performed each action.
 
 ## 8. Inventory
 
@@ -158,7 +159,7 @@ Creada → Asignada → En proceso ⇄ Pausada → Completada → Cerrada
 - How it works:
   1. The Production manager assigns an order to one or more machines; it is saved in the database.
   2. Every X seconds the PLC queries the database for that machine's pending orders.
-  3. When it finds one, the PLC signals the operator **on the machine's own screen**.
+  3. When it finds one, the PLC shows it to the operator **on the machine's own screen** (order number, products, liters, packaging, comments, expiry). The operator starts, pauses and finishes production there.
   4. The PLC **writes every action to the database** (start, progress, pause, completion, quantity dispensed). That is how the system knows an order was completed; it then appears to the Production manager for closing.
 - We send nothing to the PLC. Our part is the database interface: what the PLC reads, what it writes, and access credentials, documented for the PLC programmer.
 - **[OPEN: PLC brand/model]** — only matters to confirm the PLC can connect to the database directly or needs a small HTTP gateway.
@@ -170,15 +171,14 @@ Creada → Asignada → En proceso ⇄ Pausada → Completada → Cerrada
 |---|---|---|
 | Master admin | Company director | Everything |
 | Admin | Office workers | Create, edit (before production) and cancel orders; add comments; catalogs; inventory |
-| Production manager | Plant production manager, the link between the office and the operators | See all orders; create and edit orders (before production); enter expiry; add comments; assign machines; pause/resume; cancel; close completed orders; view inventory |
-| Operator | Machine operators | See their machine's orders; start/pause/resume/complete manually when needed; fill checklist, lot and materials used |
+| Production manager | Plant production manager, the link between the office and the operators | See all orders; create and edit orders (before production); enter expiry; add comments; assign machines; start/pause/resume/complete when needed; fill checklist, lots and materials used; cancel; close completed orders; view inventory |
 
-There is **no supervisor role** (replaced by the Production manager).
+There is **no supervisor role** (replaced by the Production manager) and **no operator role**: machine operators never log in; they use only the PLC screen on their machine.
 
 ## 11. Architecture and infrastructure
 
-- Web application for office users, the Production manager and operators.
-- Operator interface **[OPEN: tablet or PC at each machine, phone]**. The PLC has its own screen for order alerts.
+- Web application for office users and the Production manager (PCs).
+- Operators use only the **PLC screen** of their machine, which shows the machine's orders and where they start, pause and finish production. No tablets or PCs at the machines are needed for the platform.
 - Own **API** for the web app.
 - Database for orders, inventory, users, machines and PLC events. PLCs access it directly through a restricted interface.
 - Hosted on **our own small server** in the office, maintained by an IT person.
@@ -200,15 +200,16 @@ There is **no supervisor role** (replaced by the Production manager).
 - The Production manager enters the expiry date; no order starts without it; rework keeps its original expiry, which cannot be changed. No automatic default.
 - Lifecycle: Creada → Asignada → En proceso ⇄ Pausada → Completada → Cerrada; no office approval.
 - The Production manager assigns orders to one or more machines whose quantities add up exactly to the order quantity; operators are not assigned individually.
-- Orders can be paused (per machine) by any user, normally the operator or the PLC, and resume on the same machine.
+- Operators do not use the platform; they work only with the PLC screen. Production actions come from the PLC, with platform controls for the Production manager as fallback.
+- Orders can be paused (per machine), normally by the operator on the PLC screen, and resume on the same machine.
 - Orders are editable before production starts; changing products or quantities removes the machine assignment.
-- Anyone except operators can cancel an order, only before production starts.
+- Any platform user can cancel an order, only before production starts.
 - Comments can be added at any time by admins and the Production manager.
-- Checklist and lots are normally filled by the Production manager but anyone can; the system records who.
+- Checklist, lots and actual materials are filled in the platform, normally by the Production manager (any platform user can); the system records who.
 - The Production manager closes completed orders, accepting any difference.
 - PLCs read pending orders from and write their actions to the database; PLC programming is out of scope.
 - No VPN; local network only. No handling of server outages. Nightly backups kept.
-- Self-hosted server, Spanish UI, roles: master admin, admin, Production manager, operator.
+- Self-hosted server, Spanish UI, roles: master admin, admin, Production manager.
 
 ## 13. Open questions
 
@@ -222,7 +223,7 @@ Numbering is stable; resolved items are kept for reference.
 6. PLC brand/model — needed only to confirm how the PLC connects to the database.
 7. ~~Mechanism for sending orders to the PLC~~ — **Resolved**: the PLC polls the database (§9).
 8. ~~Behavior when the server is down~~ — **Resolved**: nothing is done.
-9. Operator device.
+9. ~~Operator device~~ — **Resolved**: operators use only the PLC screen.
 10. ~~Supervisor role~~ — **Resolved**: replaced by the Production manager.
 11. ~~Cancellation rules~~ — **Resolved** (§7).
 12. Label and barcode printing integration.

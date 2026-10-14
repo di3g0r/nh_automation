@@ -17,6 +17,7 @@ import {
   IconChevronDown,
   IconBuildingFactory2,
   IconClipboardList,
+  IconEngine,
   IconHome,
   IconKey,
   IconLogout,
@@ -52,6 +53,12 @@ const NAV_ITEMS: NavItem[] = [
     to: "/ordenes",
     icon: IconClipboardList,
     permission: "orders.view",
+  },
+  {
+    label: strings.nav.maquinas,
+    to: "/maquinas",
+    icon: IconEngine,
+    permission: "machines.board",
   },
   {
     label: strings.nav.inventario,

@@ -90,10 +90,7 @@ def seed_dev() -> None:
     try:
         created = seed_service.seed_dev(db)
         typer.echo("Creado: " + (", ".join(created) if created else "nada (ya existía)."))
-        typer.echo(
-            f"Usuarios dev: contraseña '{seed_service.DEV_PASSWORD}', "
-            f"PIN de operador '{seed_service.DEV_PIN}'."
-        )
+        typer.echo(f"Usuarios dev: contraseña '{seed_service.DEV_PASSWORD}'.")
     finally:
         db.close()
 

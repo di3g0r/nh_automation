@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from app.core.timezone import utc_now
 from tests.conftest import auth_headers, login, make_user
 
@@ -55,21 +57,40 @@ def test_lockout_clears_after_window(client, db_session):
     assert resp.status_code == 200
 
 
-def test_pin_login_success(client, db_session):
+def test_pin_login_endpoint_is_gone(client, db_session):
     make_user(db_session, username="op1", role="operator", password="unused-pw", pin="1234")
 
     resp = client.post("/api/v1/auth/pin-login", json={"username": "op1", "pin": "1234"})
 
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "operator"
+    assert resp.status_code in (404, 405)
 
 
-def test_pin_login_wrong_pin_fails(client, db_session):
-    make_user(db_session, username="op1", role="operator", password="unused-pw", pin="1234")
+@pytest.mark.parametrize("active", [True, False])
+def test_operator_cannot_log_in(client, db_session, active):
+    """Scenario 7: former operators get a clear Spanish message (v3.1)."""
+    make_user(db_session, username="op1", role="operator", password="op-pw-1234",
+              is_active=active)
 
-    resp = client.post("/api/v1/auth/pin-login", json={"username": "op1", "pin": "9999"})
+    resp = login(client, "op1", "op-pw-1234")
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "OPERATOR_NO_ACCESS"
+    assert resp.json()["error"]["message"] == "Los operadores no usan la plataforma."
+    assert "nh_session" not in resp.cookies
 
+    # Wrong password: the generic message, nothing revealed.
+    resp = login(client, "op1", "wrong")
     assert resp.status_code == 401
+    assert resp.json()["error"]["code"] == "INVALID_CREDENTIALS"
+
+
+def test_existing_operator_session_is_rejected(client, db_session):
+    """A session opened before phase 3 stops working once the role is operator."""
+    user = make_user(db_session, username="jdoe", role="admin", password="s3cret-pw")
+    login(client, "jdoe", "s3cret-pw")
+    assert client.get("/api/v1/auth/me").status_code == 200
+    user.role = "operator"
+    db_session.commit()
+    assert client.get("/api/v1/auth/me").status_code == 401
 
 
 def test_deactivated_user_cannot_login(client, db_session):

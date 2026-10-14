@@ -6,10 +6,11 @@ import pytest
 from app.core.permissions import ROLE_PERMISSIONS, Permission, Role
 from tests.conftest import login, login_as, make_user
 
-ALL_ROLES = ["master_admin", "admin", "production_manager", "operator"]
-M, A, P, OP = "master_admin", "admin", "production_manager", "operator"
+ALL_ROLES = ["master_admin", "admin", "production_manager"]  # v3.1: no operator role
+M, A, P = "master_admin", "admin", "production_manager"
 
-# Literal copy of the overview §4 table (v3). Changing the map means changing this.
+# Literal copy of the overview §4 table (v3.1). Changing the map means changing this.
+# The legacy `operator` role has no permissions at all.
 OVERVIEW_MATRIX: dict[str, set[str]] = {
     "users.manage": {M},
     "catalogs.manage": {M, A},
@@ -21,8 +22,8 @@ OVERVIEW_MATRIX: dict[str, set[str]] = {
     "orders.comment": {M, A, P},
     "orders.assign": {M, P},
     "orders.expiry": {M, P},
-    "orders.traceability": {M, A, P, OP},
-    "production.control": {M, A, P, OP},
+    "orders.traceability": {M, A, P},
+    "production.control": {M, P},
     "orders.cancel": {M, A, P},
     "orders.close": {M, P},
     "machines.board": {M, A, P},
@@ -43,6 +44,7 @@ def test_removed_permissions_and_role_are_gone():
     values = {p.value for p in Permission}
     assert not values & {"orders.approve", "orders.verify", "assignments.work_own"}
     assert "supervisor" not in {r.value for r in Role}
+    assert ROLE_PERMISSIONS[Role.OPERATOR] == frozenset()
 
 
 ENDPOINTS_AND_ALLOWED_ROLES = [
@@ -100,7 +102,7 @@ def test_read_permissions(client, db_session, base_catalogs, path, allowed_roles
 
 @pytest.mark.parametrize("role", ALL_ROLES)
 def test_catalog_writes_need_catalogs_manage(client, db_session, base_catalogs, nb_id, role):
-    """Production manager can view catalogs but not edit them; operator has no access."""
+    """Production manager can view catalogs but not edit them."""
     headers = login_as(client, db_session, role)
     expected_create = 201 if role in OFFICE else 403
     resp = client.post(
@@ -158,7 +160,7 @@ def test_sequences_writes_need_sequences_manage(client, db_session, base_catalog
 
 @pytest.mark.parametrize("role", ALL_ROLES)
 def test_order_writes_need_order_permissions(client, db_session, base_catalogs, nb_id, role):
-    """orders.edit / orders.comment / orders.cancel: everyone except operators (phase 2)."""
+    """orders.edit / orders.comment / orders.cancel: all three roles."""
     from decimal import Decimal
 
     from app.models.catalogs import Client, Product

@@ -70,8 +70,9 @@ class StockMovement(Base, TimestampMixin):
     order_id: Mapped[int | None] = mapped_column(
         ForeignKey("work_orders.id", name="fk_stock_movements_order_id"), nullable=True, index=True
     )
-    # The assignments table arrives in phase 3, which adds this foreign key.
-    assignment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    assignment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assignments.id", name="fk_stock_movements_assignment_id"), nullable=True
+    )
     user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

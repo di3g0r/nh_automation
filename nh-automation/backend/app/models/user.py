@@ -1,4 +1,5 @@
-"""User table (data model §2). Roles: master_admin, admin, production_manager, operator."""
+"""User table (data model §2). Roles: master_admin, admin, production_manager
+(operator is legacy: allowed by ck_users_role for old rows, cannot log in)."""
 
 from __future__ import annotations
 

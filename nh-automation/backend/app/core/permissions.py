@@ -2,8 +2,8 @@
 
 Endpoints depend on a *permission* (via `require_permission` in app/api/deps.py),
 never on a role directly. The whole map is defined here; permissions without an
-endpoint yet (orders.*, production.control, machines.*) are wired by the phase
-that adds those routes.
+endpoint yet (machines.plc_credentials) are wired by the phase that adds those
+routes.
 """
 
 from __future__ import annotations
@@ -15,7 +15,13 @@ class Role(StrEnum):
     MASTER_ADMIN = "master_admin"
     ADMIN = "admin"
     PRODUCTION_MANAGER = "production_manager"  # Jefe de producción (replaces supervisor, v3)
+    # Legacy (v3.1): operators do not use the platform. Kept only so old rows
+    # stay valid under ck_users_role; such users cannot log in.
     OPERATOR = "operator"
+
+
+# Roles that can be given to a user (create/edit) and that can log in.
+PLATFORM_ROLES = frozenset({Role.MASTER_ADMIN, Role.ADMIN, Role.PRODUCTION_MANAGER})
 
 
 class Permission(StrEnum):
@@ -50,7 +56,6 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.ORDERS_EDIT,
             Permission.ORDERS_COMMENT,
             Permission.ORDERS_TRACEABILITY,
-            Permission.PRODUCTION_CONTROL,
             Permission.ORDERS_CANCEL,
             Permission.MACHINES_BOARD,
         }
@@ -70,8 +75,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.MACHINES_BOARD,
         }
     ),
-    # Operators see only their machine's orders (phase 3 scopes that separately).
-    Role.OPERATOR: frozenset({Permission.ORDERS_TRACEABILITY, Permission.PRODUCTION_CONTROL}),
+    Role.OPERATOR: frozenset(),  # legacy, cannot log in (v3.1)
 }
 
 
