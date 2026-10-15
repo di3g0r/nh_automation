@@ -4,9 +4,17 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.core.permissions import Role
+from app.core.permissions import PLATFORM_ROLES, Role
 
-_VALID_ROLES = {r.value for r in Role}
+_VALID_ROLES = {r.value for r in PLATFORM_ROLES}
+
+
+def _check_role(v: str) -> str:
+    if v == Role.OPERATOR.value:
+        raise ValueError("Los operadores no usan la plataforma.")
+    if v not in _VALID_ROLES:
+        raise ValueError(f"Rol inválido: {v}")
+    return v
 
 
 class UserOut(BaseModel):
@@ -17,7 +25,6 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     is_active: bool
-    has_pin: bool = False
     failed_attempts: int
     locked_until: datetime | None
     last_login_at: datetime | None
@@ -32,7 +39,6 @@ class UserOut(BaseModel):
             full_name=user.full_name,
             role=user.role,
             is_active=user.is_active,
-            has_pin=bool(user.pin_hash),
             failed_attempts=user.failed_attempts,
             locked_until=user.locked_until,
             last_login_at=user.last_login_at,
@@ -46,21 +52,11 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     role: str
     password: str = Field(min_length=8, max_length=128)
-    pin: str | None = Field(default=None, min_length=4, max_length=6)
 
     @field_validator("role")
     @classmethod
     def role_must_be_known(cls, v: str) -> str:
-        if v not in _VALID_ROLES:
-            raise ValueError(f"Rol inválido: {v}")
-        return v
-
-    @field_validator("pin")
-    @classmethod
-    def pin_must_be_digits(cls, v: str | None) -> str | None:
-        if v is not None and not v.isdigit():
-            raise ValueError("El PIN debe contener solo dígitos.")
-        return v
+        return _check_role(v)
 
 
 class UserUpdate(BaseModel):
@@ -70,18 +66,8 @@ class UserUpdate(BaseModel):
     @field_validator("role")
     @classmethod
     def role_must_be_known(cls, v: str | None) -> str | None:
-        if v is not None and v not in _VALID_ROLES:
-            raise ValueError(f"Rol inválido: {v}")
-        return v
+        return None if v is None else _check_role(v)
 
 
 class ResetCredentials(BaseModel):
-    password: str | None = Field(default=None, min_length=8, max_length=128)
-    pin: str | None = Field(default=None, min_length=4, max_length=6)
-
-    @field_validator("pin")
-    @classmethod
-    def pin_must_be_digits(cls, v: str | None) -> str | None:
-        if v is not None and not v.isdigit():
-            raise ValueError("El PIN debe contener solo dígitos.")
-        return v
+    password: str = Field(min_length=8, max_length=128)

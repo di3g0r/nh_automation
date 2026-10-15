@@ -4,7 +4,6 @@ import {
   Center,
   Paper,
   PasswordInput,
-  SegmentedControl,
   Stack,
   Text,
   TextInput,
@@ -12,28 +11,25 @@ import {
 } from "@mantine/core";
 import { IconAlertCircle } from "@tabler/icons-react";
 import { useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { strings } from "../i18n/strings";
+import { landingPath } from "../utils/landing";
 
-type Mode = "password" | "pin";
-
+/** Password login only: operators do not use the platform (v3.1). */
 export function LoginPage() {
-  const { user, loginWithPassword, loginWithPin } = useAuth();
-  const navigate = useNavigate();
+  const { user, loginWithPassword } = useAuth();
   const location = useLocation();
 
-  const [mode, setMode] = useState<Mode>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [pin, setPin] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (user) {
-    const from = (location.state as { from?: string } | null)?.from ?? "/";
+    const from = (location.state as { from?: string } | null)?.from ?? landingPath(user.role);
     return <Navigate to={from} replace />;
   }
 
@@ -42,12 +38,8 @@ export function LoginPage() {
     setError(null);
     setSubmitting(true);
     try {
-      if (mode === "password") {
-        await loginWithPassword(username, password);
-      } else {
-        await loginWithPin(username, pin);
-      }
-      navigate("/", { replace: true });
+      await loginWithPassword(username, password);
+      // The redirect above sends the user to their landing page once `user` is set.
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -70,16 +62,6 @@ export function LoginPage() {
             </Text>
           </div>
 
-          <SegmentedControl
-            fullWidth
-            value={mode}
-            onChange={(v) => setMode(v as Mode)}
-            data={[
-              { label: strings.login.modoContrasena, value: "password" },
-              { label: strings.login.modoPin, value: "pin" },
-            ]}
-          />
-
           <form onSubmit={handleSubmit}>
             <Stack gap="sm">
               <TextInput
@@ -89,23 +71,12 @@ export function LoginPage() {
                 required
                 autoFocus
               />
-              {mode === "password" ? (
-                <PasswordInput
-                  label={strings.login.contrasena}
-                  value={password}
-                  onChange={(e) => setPassword(e.currentTarget.value)}
-                  required
-                />
-              ) : (
-                <TextInput
-                  label={strings.login.pin}
-                  value={pin}
-                  onChange={(e) => setPin(e.currentTarget.value.replace(/\D/g, ""))}
-                  inputMode="numeric"
-                  maxLength={6}
-                  required
-                />
-              )}
+              <PasswordInput
+                label={strings.login.contrasena}
+                value={password}
+                onChange={(e) => setPassword(e.currentTarget.value)}
+                required
+              />
 
               {error && (
                 <Alert color="red" icon={<IconAlertCircle size={18} />}>

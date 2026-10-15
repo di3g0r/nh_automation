@@ -1,22 +1,28 @@
 # 00 — Overview, Architecture and Conventions
 
-> Status: Draft v1 — 2026-10-06. Shared by every phase. Read `docs/CONTEXT.md` first.
+> Status: v2 — 2026-10-09 (v1: 2026-10-06). Shared by every phase. Read `docs/CONTEXT.md` first.
+> v2 changes: razones sociales, supervisor can cancel, PLC talks to the database (no PLC HTTP API), no VPN, backups kept but optional, open items updated.
+> v2.1: phase 4 slimmed down (no simulator, no troubleshooting page); phase 5 removed and merged into phase 4's handover checklist.
+> v3.1 (2026-10-13): operators do not use the platform (PLC screen only): no operator role in the UI, no operator station, no PIN login.
+> v3 (2026-10-13): Production manager role replaces supervisor; new permission set; Producto base / Producto terminado; T-/R- numbering; pause; open items updated.
 
 ## 1. Document map
 
-| File | Content |
-|---|---|
-| `00-overview.md` | This file: stack, architecture, roles, conventions, UI rules, non-functional requirements, deployment, open items |
-| `01-data-model.md` | Tables, statuses, business rules — the single source of truth for the database |
-| `phase-0-foundation.md` | Repo, Docker, database, auth, users, audit log, UI shell |
-| `phase-1-catalogs-inventory.md` | Products, packaging, clients, sites, machines, imports, stock |
-| `phase-2-work-orders.md` | Work orders, reservations, overselling block, printing |
-| `phase-3-assignments-operator.md` | Assignments, machine board, operator station, completion, verification |
-| `phase-4-plc-api-simulator.md` | PLC endpoints and PLC simulator |
-| `phase-5-real-plc.md` | Integration with the real PLC model |
-| `phase-6-dashboard.md` | Production dashboard |
+| File | Content | Status |
+|---|---|---|
+| `00-overview.md` | This file: stack, architecture, roles, conventions, UI rules, non-functional requirements, deployment, open items | |
+| `01-data-model.md` | Tables, statuses, business rules — the single source of truth for the database | |
+| `phase-0-foundation.md` | Repo, Docker, database, auth, users, audit log, UI shell | Done |
+| `phase-1-catalogs-inventory.md` | Products, packaging, clients, sites, machines, imports, stock | Done |
+| `phase-1b-v2-updates.md` | Apply the v2/v3 decisions to code already built (razones sociales, Production manager role, permissions, sequences, settings) | Done |
+| `phase-2-work-orders.md` | Work orders (one or more base products), numbering, reservations, overselling block, comments, printing | Done |
+| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, production controls, completion, closing; removes the operator role from the UI | **Next** |
+| `phase-4-plc-database-interface.md` | Database views and event table the PLCs use; event processing; document and handover checklist for the PLC programmer | |
+| `phase-6-dashboard.md` | Production dashboard | |
 
-Conventions: requirement IDs (`FR-*`, `NFR-*`) are stable and can be referenced in commits and tests. **[OPEN-n]** = undecided (see §10). **[PROPOSED]** = technical choice the owner may still change.
+`phase-4-plc-api-simulator.md` and `phase-5-real-plc.md` are obsolete and can be deleted. There is no phase 5; the dashboard keeps the number 6.
+
+Conventions: requirement IDs (`FR-*`, `NFR-*`, `BR-*`) are stable and can be referenced in commits and tests. **[OPEN-n]** = undecided (see §10). **[PROPOSED]** = technical choice the owner may still change.
 
 ## 2. Technology stack [PROPOSED]
 
@@ -27,7 +33,6 @@ Conventions: requirement IDs (`FR-*`, `NFR-*`) are stable and can be referenced 
 | Frontend | React + TypeScript + Vite, Mantine (component library), TanStack Query |
 | Web server | Caddy (serves frontend, proxies API, internal HTTPS) |
 | Containers | Docker + Docker Compose |
-| VPN | WireGuard |
 | Tests | pytest (backend), Vitest + Testing Library (frontend), Playwright (optional end-to-end) |
 
 Use current stable versions.
@@ -35,52 +40,55 @@ Use current stable versions.
 ## 3. Architecture
 
 ```
- Office PCs ──(VPN / LAN)──┐
-                           ▼
- Operator tablets ──(LAN)──► Caddy (HTTPS) ──► Frontend (static React build)
-                                   │
-                                   └──► API (FastAPI) ──► PostgreSQL
-                                          ▲
- PLCs (≈6 machines) ──(HTTP, machine network)──┘
- Backup job ──► nightly database dump ──► external storage
+ Office / production PCs ─(LAN)──► Caddy (HTTPS) ──► Frontend (static React build)
+                                  │
+                                  └──► API (FastAPI) ──► PostgreSQL ◄──(restricted DB login)── PLCs (≈6)
+                                                             ▲           reads pending orders,
+                                       Event processor ──────┘           writes action events
+ Backup job ──► nightly database dump (optional, kept)
 ```
 
-- **Web app**: office screens and the operator station (same app, role-based views).
+- **Web app**: used by the office and the Production manager only. **Operators never use it**; they work with the PLC screen of their machine (CONTEXT §9).
 - **API** (`/api/v1`): the only entry point for the web app; all business rules live here.
-- **PLC API** (`/plc/v1`): small, separate endpoints for limited PLC HTTP clients (phase 4).
-- **PLC simulator**: script that behaves like a PLC (phase 4).
+- **PLC database interface** (phase 4): each PLC logs into PostgreSQL with its own restricted user, **reads** its pending assignments from a view and **inserts** action events into an inbox table. It cannot read or change anything else.
+- **Event processor** (phase 4): part of the backend; applies PLC events to assignments through the same service functions as manual actions, so business rules stay in one place.
+- **PLC programming is out of scope**; we provide and document the interface (CONTEXT §9).
+- **No VPN.** Everything is reachable only from the local network.
 
 ### Repository structure
 
 ```
-/backend      app/ (api, models, schemas, services, core), migrations/, tests/
+/backend      app/ (api, models, schemas, services, core), migrations/, tests/, external_sources/
 /frontend     src/ (pages, components, api, i18n, utils)
-/tools        plc_simulator.py, import helpers
-/deploy       docker-compose files, Caddyfile, backup scripts
-/docs         CONTEXT.md, specs/, DECISIONS.md, PROGRESS.md, operations guide
+/tools        samples/
+/deploy       docker-compose files, Caddyfile, backup scripts, PLC DB role scripts
+/docs         CONTEXT.md, specs/, DECISIONS.md, PROGRESS.md, PLC_INTERFACE.md, operations guide
 CLAUDE.md
 ```
 
 ## 4. Roles and permissions
 
-Roles: **master_admin** (director), **admin** (office), **supervisor** (warehouse) **[OPEN-10]**, **operator** (machines).
+Roles: **master_admin** (director), **admin** (office), **production_manager** (*Jefe de producción*, the link between office and operators). There is **no supervisor** and **no operator role** in the UI (v3.1): operators work only with the PLC screen. The value `operator` stays allowed in the database constraint only so old rows remain valid; such users cannot log in.
 
-| Permission | Master admin | Admin | Supervisor | Operator |
-|---|---|---|---|---|
-| `users.manage` | ✅ | ❌ | ❌ | ❌ |
-| `catalogs.manage` (products, packaging, clients, sites, machines) | ✅ | ✅ | ❌ | ❌ |
-| `inventory.view` | ✅ | ✅ | ✅ | ❌ |
-| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ✅ | ❌ |
-| `orders.view` | ✅ | ✅ | ✅ | ❌ (only own assignments) |
-| `orders.edit` (create/edit/delete) | ✅ | ✅ | ❌ | ❌ |
-| `orders.approve` | ✅ | ✅ | ❌ | ❌ |
-| `orders.assign` | ✅ | ✅ | ✅ | ❌ |
-| `orders.traceability` (lot, expiry) | ✅ | ✅ | ✅ | ❌ |
-| `orders.verify` | ✅ | ❌ | ✅ | ❌ |
-| `orders.cancel` | ✅ | ✅ | ❌ | ❌ |
-| `assignments.work_own` (start/pause/complete, checklist, materials) | ✅ | ✅ | ✅ | ✅ (own) |
-| `machines.board` | ✅ | ✅ | ✅ | ❌ |
-| `audit.view`, `settings.manage` | ✅ | ❌ | ❌ | ❌ |
+| Permission | Master admin | Admin | Production manager |
+|---|---|---|---|
+| `users.manage` | ✅ | ❌ | ❌ |
+| `catalogs.manage` (products, packaging, razones sociales, clients, sites, machines) | ✅ | ✅ | ❌ |
+| `sequences.manage` (next Trabajo / Retrabajo number) | ✅ | ❌ | ❌ |
+| `inventory.view` | ✅ | ✅ | ✅ |
+| `inventory.move` (receipts, adjustments) | ✅ | ✅ | ❌ |
+| `orders.view` (all orders) | ✅ | ✅ | ✅ |
+| `orders.edit` (create; edit and delete before production starts) | ✅ | ✅ | ✅ |
+| `orders.comment` (add comments at any time) | ✅ | ✅ | ✅ |
+| `orders.assign` (assign/reassign machines before production starts) | ✅ | ❌ | ✅ |
+| `orders.expiry` (enter expiry date) | ✅ | ❌ | ✅ |
+| `orders.traceability` (lots, checklist, actual materials and labels — who is recorded) | ✅ | ✅ | ✅ |
+| `production.control` (start, pause, resume, complete from the platform — fallback to the PLC) | ✅ | ❌ | ✅ |
+| `orders.cancel` (only before production starts) | ✅ | ✅ | ✅ |
+| `orders.close` (approve and close completed orders) | ✅ | ❌ | ✅ |
+| `machines.board` | ✅ | ✅ | ✅ |
+| `machines.plc_credentials` (create/rotate PLC database logins) | ✅ | ❌ | ❌ |
+| `audit.view`, `settings.manage` | ✅ | ❌ | ❌ |
 
 The role → permissions map lives in **one module**. Endpoints check permissions, not roles.
 
@@ -97,56 +105,61 @@ The role → permissions map lives in **one module**. Endpoints check permission
 
 - All text in Spanish, kept in one translation/strings module (no hard-coded text scattered in components).
 - Dates `dd/mm/aaaa`, 24-hour time, America/Mazatlan. Liters as `1,000.00 L`.
-- Office navigation: **Inicio, Órdenes, Máquinas, Inventario, Catálogos** (Productos, Materiales de empaque, Clientes, Sitios, Máquinas), **Usuarios, Bitácora, Configuración**. Items hidden when the user lacks permission.
-- Operators land on **Estación de operador** (touch-friendly, large buttons).
+- Office navigation: **Inicio, Producción, Órdenes, Máquinas, Inventario, Catálogos** (Productos, Materiales de empaque, Razones sociales, Clientes, Sitios, Máquinas), **Usuarios, Bitácora, Configuración**. Items hidden when the user lacks permission.
+- The Production manager lands on **Producción** (new orders to assign, orders in production, completed orders to close). There is no operator station.
 - Consistent color-coded status badges. Clear Spanish error messages from the API.
-- Works on Chrome/Edge (PC) and Chrome on Android tablets; responsive down to 360 px width.
+- Works on Chrome/Edge on PCs; usable on smaller screens (responsive down to 360 px) for occasional checks.
 
 ## 7. Non-functional requirements
 
-- **NFR-1 Security:** Argon2 (or bcrypt) for passwords and PINs; HTTPS for browsers (Caddy internal CA); CSRF protection; permission checks on every endpoint; machine API keys hashed; PLC endpoints only from the machine network; nothing exposed to the internet.
-- **NFR-2 Network:** web app reachable only via VPN and the plant LAN **[OPEN-13]**; recommended separate VLAN for PLCs.
-- **NFR-3 Performance:** pages < 2 s on LAN; PLC endpoints < 200 ms. Scale: ≈6 machines, tens of users, a few hundred orders/day.
-- **NFR-4 Reliability:** containers restart automatically; persistent database volume; health checks.
-- **NFR-5 Backups:** nightly dump, 30-day retention, copied off the server; documented and tested restore. UPS recommended.
+- **NFR-1 Security:** Argon2 (or bcrypt) for passwords and PINs; HTTPS for browsers (Caddy internal CA); CSRF protection; permission checks on every endpoint; nothing exposed to the internet. PLC database logins are restricted to their interface (read their view, insert into the event table) and PostgreSQL accepts them only from the machines' IP addresses.
+- **NFR-2 Network:** the system is reachable only from the local network. **No VPN.** The PostgreSQL port is opened only to the PLCs' addresses (phase 4).
+- **NFR-3 Performance:** pages < 2 s on LAN; PLC view queries < 100 ms; PLC events applied within 5 s. Scale: ≈6 machines, tens of users, a few hundred orders/day.
+- **NFR-4 Reliability:** containers restart automatically; persistent database volume; health checks. Server or network outages are not handled beyond that (no offline mode).
+- **NFR-5 Backups:** the nightly dump built in phase 0 (30-day retention) is kept; it is not a formal requirement. Copying dumps off the server is recommended.
 - **NFR-6 Auditability:** no hard deletes of business records except orders in *Creada*.
 - **NFR-7 Localization:** UI in Spanish (es-MX).
 - **NFR-7a Time zone:** America/Mazatlan (UTC−7, no DST). Store UTC; display local everywhere (screens, prints, exports, history, audit). "Today" and daily grouping use the local day. PLC timestamps without offset are local. Single setting `TZ=America/Mazatlan`.
-- **NFR-8 Browsers:** current Chrome and Edge; Chrome on Android.
+- **NFR-8 Browsers:** current Chrome and Edge on PCs.
 - **NFR-9 Maintainability:** typed code; linters/formatters (ruff, mypy, eslint, prettier); tests for every business rule in `01-data-model.md` §4; migrations only; README for the IT person.
 
 ## 8. Deployment
 
-**Docker Compose services:** `db` (PostgreSQL, volume, internal only), `api` (FastAPI, runs migrations on start), `web` (Caddy: frontend + proxy to `/api` and `/plc`), `backup` (scheduled `pg_dump` to a mounted folder).
+**Docker Compose services:** `db` (PostgreSQL, volume), `api` (FastAPI, runs migrations on start, runs the PLC event processor from phase 4), `web` (Caddy: frontend + proxy to `/api`), `backup` (nightly `pg_dump`).
 
-Two configurations: `docker-compose.dev.yml` (hot reload, seed data, simulator) and `docker-compose.prod.yml`.
+Two configurations: `docker-compose.dev.yml` (hot reload, seed data) and `docker-compose.prod.yml`. From phase 4, prod publishes the PostgreSQL port on the server, restricted by `pg_hba.conf` and the firewall to the PLC addresses (`PLC_ALLOWED_NETWORKS`).
 
-Configuration via `.env` (`.env.example` committed): DB password, secret key, allowed networks, `TZ`, backup path.
+Configuration via `.env` (`.env.example` committed): DB password, secret key, `PLC_ALLOWED_NETWORKS`, `TZ`, backup path, external catalog DB URL.
 
-Server: Linux (e.g. Ubuntu Server LTS) with Docker; 4+ cores, 8+ GB RAM, SSD, UPS. VPN: WireGuard on the server or router (IT decides). Update: backup → `git pull` → `docker compose up -d --build`.
+Server: Linux (e.g. Ubuntu Server LTS) with Docker; 4+ cores, 8+ GB RAM, SSD, UPS recommended. Update: backup → `git pull` → `docker compose up -d --build`.
 
 ## 9. Out of scope for v1
 
-Client management beyond name/code, sales, invoicing, accounting, label printer integration (until OPEN-12), multi-language UI, internet access outside the VPN.
+PLC programming; VPN; offline/outage handling; client management beyond name; sales, invoicing, accounting; label printer integration (until OPEN-12); multi-language UI; internet access.
 
 ## 10. Open items
 
 Numbering matches `CONTEXT.md` §13. Implement the default; mark code with `TODO(OPEN-n)`.
 
-| # | Item | Default until decided |
+| # | Item | Status / default |
 |---|---|---|
-| OPEN-1 | Meaning of *Retrabajo* | Optional link to a related order |
-| OPEN-2 | Operation number generation | Global sequence + client code (`8292 ANB`) |
-| OPEN-3 | "Reen #" codes | Kept in free-text comments |
-| OPEN-4 | Lot and expiry format | Free text, no validation |
-| OPEN-5 | Product code structure | Free text, unique |
-| OPEN-6 | PLC brand/model | Protocol in phase 4, validated with simulator |
-| OPEN-7 | System → PLC mechanism | PLC polls the API |
-| OPEN-8 | Server down during production | PLC resends on reconnection; manual fallback |
-| OPEN-9 | Operator device | Responsive web, tablet-first |
-| OPEN-10 | Supervisor role | Separate role |
-| OPEN-11 | Cancellation rules | Cancel before *En proceso*; close short after |
-| OPEN-12 | Label/barcode printing | Printable order with barcode |
-| OPEN-13 | VPN purpose | VPN for office devices; separate machine network |
-| OPEN-14 | Other sites | Stock per site; one default site |
-| OPEN-15 | Volume and users | ≈6 machines, a few hundred orders/day |
+| OPEN-1 | Meaning of *Retrabajo* | **Resolved:** two kinds (previous order / own stock) |
+| OPEN-2 | Operation number generation | **Resolved (v3):** `T-<n> <RS>` / `R-<n> <RS>`; one sequence for Trabajo and one for Retrabajo, shared across razones sociales, starting at 1 |
+| OPEN-3 | "Reen #" codes | Open — kept in free-text comments |
+| OPEN-4 | Lot format; expiry display format | Open — free text lot; expiry stored as a date, shown `MM/AAAA`. Expiry rules resolved (v3) |
+| OPEN-5 | Product code structure | Open — free text, unique |
+| OPEN-6 | PLC brand/model | Open — only to confirm direct DB access vs a small HTTP gateway |
+| OPEN-7 | System → PLC mechanism | **Resolved:** PLC polls the database |
+| OPEN-8 | Server down during production | **Resolved:** nothing is done |
+| OPEN-9 | Operator device | **Resolved (v3.1):** operators use only the PLC screen; they never log in |
+| OPEN-10 | Supervisor role | **Resolved (v3):** no supervisor; replaced by the Production manager |
+| OPEN-11 | Cancellation rules | **Resolved:** all except operators; only before production starts |
+| OPEN-12 | Label/barcode printing | Open — printable order with barcode |
+| OPEN-13 | VPN | **Resolved:** no VPN, LAN only |
+| OPEN-14 | Other sites | Open — stock per site; one default site |
+| OPEN-15 | Volume and users | Open — ≈6 machines, a few hundred orders/day |
+| OPEN-16 | Razones sociales 3 and 4 | Open — placeholders `RS3`, `RS4` |
+| OPEN-17 | Current operation numbers | **Resolved (v3):** sequences start at 1 (master admin can still change the next number) |
+| OPEN-19 | Acceptable difference range | Open — settings `difference_tolerance_liters` and `difference_tolerance_percent`; outside the range is highlighted, never blocks closing |
+| OPEN-20 | Moving a paused remainder to another machine | Open — not supported; a paused assignment resumes on the same machine |
+| OPEN-18 | External catalog DB | Open — structure, access, one-time import vs ongoing sync |

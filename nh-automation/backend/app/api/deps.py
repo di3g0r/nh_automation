@@ -33,7 +33,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise unauthorized()
 
     user = db.get(User, session.user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not auth_service.can_use_platform(user):
         raise unauthorized()
 
     if request.method in STATE_CHANGING_METHODS:
@@ -52,6 +52,19 @@ def require_permission(permission: Permission) -> Callable[..., User]:
 
     def checker(user: User = Depends(get_current_user)) -> User:
         if not role_has_permission(user.role, permission):
+            raise AppError(
+                "FORBIDDEN", "No tiene permiso para realizar esta acción.", 403
+            )
+        return user
+
+    return checker
+
+
+def require_any_permission(*permissions: Permission) -> Callable[..., User]:
+    """Like require_permission, but any one of `permissions` is enough."""
+
+    def checker(user: User = Depends(get_current_user)) -> User:
+        if not any(role_has_permission(user.role, p) for p in permissions):
             raise AppError(
                 "FORBIDDEN", "No tiene permiso para realizar esta acción.", 403
             )

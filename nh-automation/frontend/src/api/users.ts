@@ -10,7 +10,6 @@ export const usersApi = {
     full_name: string;
     role: Role;
     password: string;
-    pin?: string;
   }) => api.post<User>("/users", payload),
 
   update: (id: number, payload: { full_name?: string; role?: Role }) =>
@@ -20,6 +19,6 @@ export const usersApi = {
 
   activate: (id: number) => api.post<User>(`/users/${id}/activate`),
 
-  resetCredentials: (id: number, payload: { password?: string; pin?: string }) =>
+  resetCredentials: (id: number, payload: { password: string }) =>
     api.post<User>(`/users/${id}/reset-credentials`, payload),
 };

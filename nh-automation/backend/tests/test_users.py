@@ -17,20 +17,37 @@ def test_create_user(client, db_session):
     resp = client.post(
         "/api/v1/users",
         json={
-            "username": "newop",
-            "full_name": "New Operator",
-            "role": "operator",
-            "password": "operator-pw1",
-            "pin": "4321",
+            "username": "newjefe",
+            "full_name": "New Jefe",
+            "role": "production_manager",
+            "password": "jefe-pw1234",
         },
         headers=auth_headers(client),
     )
 
     assert resp.status_code == 201
     body = resp.json()
-    assert body["username"] == "newop"
-    assert body["has_pin"] is True
+    assert body["username"] == "newjefe"
+    assert "has_pin" not in body
     assert body["is_active"] is True
+
+
+def test_operator_role_cannot_be_created_or_assigned(client, db_session):
+    """v3.1: operators do not use the platform."""
+    _login_master_admin(client, db_session)
+    resp = client.post(
+        "/api/v1/users",
+        json={"username": "op", "full_name": "Op", "role": "operator", "password": "op-pw12345"},
+        headers=auth_headers(client),
+    )
+    assert resp.status_code == 422
+    assert "Los operadores no usan la plataforma." in resp.text
+
+    user = make_user(db_session, username="adm2", role="admin", password="pw-1234567")
+    resp = client.patch(
+        f"/api/v1/users/{user.id}", json={"role": "operator"}, headers=auth_headers(client)
+    )
+    assert resp.status_code == 422
 
 
 def test_create_user_duplicate_username_rejected(client, db_session):

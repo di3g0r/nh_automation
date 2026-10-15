@@ -1,4 +1,4 @@
-"""Authentication endpoints: password login, PIN login, logout, me, change-password."""
+"""Authentication endpoints: password login, logout, me, change-password."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from app.core.errors import AppError
 from app.core.permissions import permissions_for_role
 from app.models.session import UserSession
 from app.models.user import User
-from app.schemas.auth import ChangePassword, MeOut, PasswordLogin, PinLogin
+from app.schemas.auth import ChangePassword, MeOut, PasswordLogin
 from app.schemas.user import UserOut
 from app.services import auth_service, user_service
 
@@ -59,18 +59,6 @@ def login(
     return UserOut.from_model(user)
 
 
-@router.post("/pin-login", response_model=UserOut)
-def pin_login(
-    payload: PinLogin, request: Request, response: Response, db: Session = Depends(get_db)
-) -> UserOut:
-    user = auth_service.authenticate_pin(db, payload.username, payload.pin)
-    session, raw_token, csrf_token = auth_service.create_session(
-        db, user, user_agent=request.headers.get("user-agent")
-    )
-    _set_session_cookies(response, raw_token, csrf_token)
-    return UserOut.from_model(user)
-
-
 @router.post("/logout")
 def logout(
     request: Request,
@@ -103,11 +91,5 @@ def change_password(
 
     if not verify_secret(payload.current_password, user.password_hash):
         raise AppError("INVALID_CREDENTIALS", "La contraseña actual es incorrecta.", 401)
-    if payload.new_password is None and payload.new_pin is None:
-        raise AppError(
-            "NO_CREDENTIALS_PROVIDED", "Debe proporcionar una nueva contraseña o PIN.", 422
-        )
-    updated = user_service.change_own_credentials(
-        db, user, new_password=payload.new_password, new_pin=payload.new_pin
-    )
+    updated = user_service.change_own_password(db, user, new_password=payload.new_password)
     return UserOut.from_model(updated)

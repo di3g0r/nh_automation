@@ -1,13 +1,13 @@
 # CLAUDE.md — instructions for Claude Code
 
-This repository is the **Work Order and Production Tracking System** for a liquid fertilizer plant (ECOINDUSTRIAL PACÍFICO). It replaces paper work orders, tracks inventory with reservations, assigns orders to machines and operators, and receives production data from machine PLCs.
+This repository is the **Work Order and Production Tracking System** for a liquid fertilizer plant (ECOINDUSTRIAL PACÍFICO). It replaces paper work orders, tracks inventory with reservations, lets a Production manager assign orders to machines, and receives production data that the machine PLCs write directly to the database (PLC programming itself is out of scope).
 
 ## Read before working
 
 1. `docs/CONTEXT.md` — the business, the paper form, glossary.
 2. `docs/specs/00-overview.md` — stack, architecture, roles, conventions, non-functional requirements.
 3. `docs/specs/01-data-model.md` — all tables and business rules (shared by every phase).
-4. **Only the phase spec you were asked to implement** (`docs/specs/phase-N-*.md`).
+4. **Only the phase spec you were asked to implement** (`docs/specs/phase-N-*.md`). Ignore `phase-4-plc-api-simulator.md` and `phase-5-real-plc.md` (obsolete).
 
 Do not implement features from later phases. If the current phase needs something small from a later phase, add the minimum and note it.
 
@@ -35,6 +35,9 @@ Full reference in `README.md`. Quick list:
 | Start prod stack | `docker compose -f deploy/docker-compose.prod.yml up -d --build` |
 | Create master admin | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli create-master-admin` |
 | Seed default settings | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-settings` |
+| Seed dev data (dev only: sample products and clients, M01–M06, one user per role: master admin, admin, jefe de producción, operador) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-dev` |
+| Re-ensure base catalogs (site, razones sociales, order sequences, 14 packaging items) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli seed-catalogs` |
+| Preview a catalog import from the external DB (add `--apply --username <u>` to save) | `docker compose -f deploy/docker-compose.dev.yml exec api python -m app.cli import-catalog products` |
 | New migration | `docker compose -f deploy/docker-compose.dev.yml exec api alembic revision --autogenerate -m "message"` |
 | Apply migrations | `docker compose -f deploy/docker-compose.dev.yml exec api alembic upgrade head` |
 | Backend tests | `cd backend && pytest` (venv with `requirements-dev.txt`; uses in-memory SQLite, see `tests/conftest.py`) |

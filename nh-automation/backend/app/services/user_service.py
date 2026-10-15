@@ -67,7 +67,6 @@ def create_user(db: Session, data: UserCreate, *, actor: User) -> User:
         full_name=data.full_name,
         role=data.role,
         password_hash=hash_secret(data.password),
-        pin_hash=hash_secret(data.pin) if data.pin else None,
         is_active=True,
     )
     db.add(user)
@@ -137,15 +136,7 @@ def set_active(db: Session, user_id: int, *, active: bool, actor: User) -> User:
 
 def reset_credentials(db: Session, user_id: int, data: ResetCredentials, *, actor: User) -> User:
     user = get_by_id(db, user_id)
-    if data.password is None and data.pin is None:
-        raise AppError(
-            "NO_CREDENTIALS_PROVIDED", "Debe proporcionar una nueva contraseña o PIN.", 422
-        )
-
-    if data.password is not None:
-        user.password_hash = hash_secret(data.password)
-    if data.pin is not None:
-        user.pin_hash = hash_secret(data.pin)
+    user.password_hash = hash_secret(data.password)
 
     user.failed_attempts = 0
     user.locked_until = None
@@ -159,13 +150,8 @@ def reset_credentials(db: Session, user_id: int, data: ResetCredentials, *, acto
     return user
 
 
-def change_own_credentials(
-    db: Session, user: User, *, new_password: str | None, new_pin: str | None
-) -> User:
-    if new_password is not None:
-        user.password_hash = hash_secret(new_password)
-    if new_pin is not None:
-        user.pin_hash = hash_secret(new_pin)
+def change_own_password(db: Session, user: User, *, new_password: str) -> User:
+    user.password_hash = hash_secret(new_password)
     db.flush()
     audit_service.record(
         db, user=user, entity="user", entity_id=user.id, action="change_credentials",

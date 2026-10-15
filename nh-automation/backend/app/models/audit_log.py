@@ -19,9 +19,9 @@ class AuditLog(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Nullable: system/PLC actions have no acting user (data model §2).
     user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    entity: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     action: Mapped[str] = mapped_column(String(64), nullable=False)
     before: Mapped[dict[str, Any] | None] = mapped_column(JSONVariant, nullable=True)

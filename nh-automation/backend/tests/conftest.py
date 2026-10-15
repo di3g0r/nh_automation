@@ -105,3 +105,29 @@ def auth_headers(client: TestClient) -> dict[str, str]:
     """Pull the CSRF cookie set by login into the header the API expects."""
     csrf = client.cookies.get("nh_csrf")
     return {"X-CSRF-Token": csrf} if csrf else {}
+
+
+@pytest.fixture()
+def base_catalogs(db_session):
+    """Production seed (data model §5): default site, 4 razones sociales, 2 order
+    sequences, 14 packaging items (no clients)."""
+    from app.services import seed_service
+
+    return seed_service.ensure_base_catalogs(db_session)
+
+
+@pytest.fixture()
+def nb_id(db_session, base_catalogs) -> int:
+    """Id of the seeded razón social NB (products require one)."""
+    from app.models.catalogs import RazonSocial
+
+    return db_session.query(RazonSocial).filter(RazonSocial.code == "NB").one().id
+
+
+def login_as(client: TestClient, db_session: Session, role: str) -> dict[str, str]:
+    """Create a user with `role`, log in, and return the CSRF headers."""
+    username = f"user_{role}"
+    if db_session.query(User).filter(User.username == username).first() is None:
+        make_user(db_session, username=username, role=role, password="pw-1234567")
+    login(client, username, "pw-1234567")
+    return auth_headers(client)
