@@ -90,7 +90,9 @@ def get_assignment(db: Session, assignment_id: int) -> Assignment:
 
 
 def _lock_order(db: Session, order_id: int) -> WorkOrder:
-    order = db.query(WorkOrder).filter(WorkOrder.id == order_id).with_for_update().first()
+    order = (
+        db.query(WorkOrder).filter(WorkOrder.id == order_id).with_for_update(of=WorkOrder).first()
+    )
     if order is None:
         raise not_found("Orden")
     return order
@@ -98,8 +100,13 @@ def _lock_order(db: Session, order_id: int) -> WorkOrder:
 
 def _lock_machine(db: Session, machine_id: int) -> Machine:
     """Serializes production actions per machine (BR-14). Always taken after
-    the order lock, so two actions never wait on each other in a cycle."""
-    machine = db.query(Machine).filter(Machine.id == machine_id).with_for_update().first()
+    the order lock, so two actions never wait on each other in a cycle.
+
+    `of=Machine`: `Machine.site` is eager-loaded with an outer join, and
+    PostgreSQL refuses FOR UPDATE on the nullable side of an outer join."""
+    machine = (
+        db.query(Machine).filter(Machine.id == machine_id).with_for_update(of=Machine).first()
+    )
     if machine is None:
         raise not_found("Máquina")
     return machine

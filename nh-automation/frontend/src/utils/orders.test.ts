@@ -75,4 +75,16 @@ describe("formatHistoryValue", () => {
       ),
     ).toBe("ENVLI20001 × 50, #9 × 2");
   });
+
+  it("shows packaging stock corrections as the change in stock", () => {
+    expect(
+      formatHistoryValue(
+        [
+          { packaging_item_id: 3, delta: 1 },
+          { packaging_item_id: 9, delta: -2 },
+        ],
+        new Map([[3, "ENVLI20001"]]),
+      ),
+    ).toBe("ENVLI20001 -1, #9 +2");
+  });
 });

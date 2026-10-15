@@ -411,13 +411,26 @@ verified everything and wrote these notes.
 
 ### Tests
 
-- Backend: **232 passed**, 5 skipped. New: `tests/test_production.py` (38 tests)
-  covers every item in the spec's Tests list and scenarios 1–7 at API level.
-  Existing auth, permission, user and order tests were updated for three roles.
-  `ruff` and `mypy` are clean.
-- Postgres concurrency tests (scratch DB): 6 passed.
-- Frontend: 26 tests passed (new `utils/production.test.ts`). Lint, typecheck and
-  build pass (only the old AuthContext fast-refresh warning remains).
+- Backend: **232 passed**, 8 skipped (Postgres-only tests). New:
+  `tests/test_production.py` (38 tests) covers every item in the spec's Tests
+  list and scenarios 1–7 at API level. Existing auth, permission, user and order
+  tests were updated for three roles. `ruff` and `mypy` are clean.
+- Postgres concurrency tests (scratch DB): 6 passed. New
+  `tests/test_production_postgres.py` (skipped unless `TEST_POSTGRES_URL` is set)
+  covers production actions with real row locks.
+- Frontend: 27 tests passed (new `utils/production.test.ts`, history-label case
+  in `utils/orders.test.ts`). Lint, typecheck and build pass (only the old
+  AuthContext fast-refresh warning remains).
+
+### Fixes found during the browser check (2026-10-14)
+
+- **Production actions failed on PostgreSQL** with *"FOR UPDATE cannot be
+  applied to the nullable side of an outer join"*: `Machine.site` is
+  eager-loaded with an outer join. `_lock_order` / `_lock_machine` now use
+  `with_for_update(of=...)`. SQLite ignores `FOR UPDATE`, so the normal suite
+  could not catch it.
+- **History labels:** packaging stock corrections after completion now show the
+  change in stock (`delta`, e.g. `<code> +2`) instead of `× planned_qty`.
 
 ### Verified on PostgreSQL (scratch DB `nh_phase3`; the dev DB was not touched)
 
@@ -430,7 +443,8 @@ verified everything and wrote these notes.
 
 ### Known issues / not verified
 
-- **The click-through stopped at the expiry modal** (usage limit). Typing into
+- **The click-through stopped at the expiry modal** (two sessions ended there
+  on the usage limit; not resumed). Typing into
   the Mantine month Select and pressing Enter did not select a value. This may be
   automation-only, but check the picker by hand. Not click-tested: saving expiry,
   the assign modal, production buttons, Terminar, closing, the board/queue modal,
@@ -439,6 +453,9 @@ verified everything and wrote these notes.
 - **The dev DB is not migrated yet:** restart `api` (or run `alembic upgrade
   head`). This deactivates the dev `operador` user, as intended.
 - Scratch DB `nh_phase3` is left in the dev Postgres; drop it when done.
+- `npm run test` can crash with *"Worker exited unexpectedly"* (tinypool) on this
+  Windows/OneDrive machine. The tests pass with
+  `npx vitest run --pool=forks --poolOptions.forks.singleFork`.
 - Carried over: prod compose / backup / restore not exercised; bundle > 500 kB.
 
 ### Definition of done

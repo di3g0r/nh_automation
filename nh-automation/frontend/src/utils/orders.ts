@@ -97,7 +97,14 @@ export function formatHistoryValue(
           if ("machine" in o && "liters" in o) return `${o.machine} ${o.liters} L`;
           if ("packaging_item_id" in o) {
             const id = Number(o.packaging_item_id);
-            return `${packagingCodes.get(id) ?? `#${id}`} × ${o.planned_qty}`;
+            const code = packagingCodes.get(id) ?? `#${id}`;
+            // Stock corrections after completion: `delta` = extra units consumed,
+            // shown as the change in stock (BR-8).
+            if ("delta" in o) {
+              const change = -Number(o.delta);
+              return `${code} ${change > 0 ? "+" : ""}${change}`;
+            }
+            return `${code} × ${o.planned_qty}`;
           }
           if ("code" in o) return String(o.code);
         }
