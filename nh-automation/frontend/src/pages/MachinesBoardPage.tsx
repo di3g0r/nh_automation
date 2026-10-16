@@ -17,7 +17,12 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconArrowDown, IconArrowUp, IconListNumbers } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconArrowDown,
+  IconArrowUp,
+  IconListNumbers,
+} from "@tabler/icons-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -34,7 +39,7 @@ import {
 import { useInvalidateProduction } from "../components/production/useInvalidateProduction";
 import { useAuth } from "../context/AuthContext";
 import { strings } from "../i18n/strings";
-import { formatLiters } from "../utils/datetime";
+import { formatAgo, formatDateTime, formatLiters } from "../utils/datetime";
 import { notifyError } from "../utils/notify";
 import { progressPercent } from "../utils/production";
 
@@ -147,6 +152,8 @@ function MachineCard({ machine, onQueue }: { machine: MachineBoardItem; onQueue:
         </Stack>
       )}
 
+      <PlcStatus machine={machine} />
+
       <Group justify="space-between" mt="auto">
         <Button
           size="xs"
@@ -167,6 +174,41 @@ function MachineCard({ machine, onQueue }: { machine: MachineBoardItem; onQueue:
         )}
       </Group>
     </Card>
+  );
+}
+
+/** Phase 4: last PLC contact (local time, "hace X min") and the latest PLC error. */
+function PlcStatus({ machine }: { machine: MachineBoardItem }) {
+  const error = machine.plc_last_error;
+  return (
+    <Stack gap={2} mb="sm">
+      <Text size="xs" c="dimmed">
+        {t.ultimoContacto}
+      </Text>
+      {!machine.has_plc_login ? (
+        <Text size="sm" c="dimmed">
+          {t.plcSinConfigurar}
+        </Text>
+      ) : machine.plc_last_seen_at ? (
+        <Text size="sm">
+          {formatDateTime(machine.plc_last_seen_at)} ({formatAgo(machine.plc_last_seen_at)})
+        </Text>
+      ) : (
+        <Text size="sm" c="dimmed">
+          {t.sinContacto}
+        </Text>
+      )}
+      {error && (
+        <Group gap={6} wrap="nowrap" align="flex-start">
+          <IconAlertTriangle size={16} color="var(--mantine-color-red-6)" />
+          <Text size="sm" c="red">
+            {t.ultimoError}: {[error.error_code, error.message].filter(Boolean).join(" — ")}
+            {error.operation_number ? ` (${error.operation_number})` : ""} ·{" "}
+            {formatDateTime(error.received_at)}
+          </Text>
+        </Group>
+      )}
+    </Stack>
   );
 }
 

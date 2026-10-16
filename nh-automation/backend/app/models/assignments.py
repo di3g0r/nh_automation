@@ -19,6 +19,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -91,3 +92,6 @@ class AssignmentEvent(Base, TimestampMixin):
     source: Mapped[str] = mapped_column(String(8), nullable=False)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     machine_id: Mapped[int | None] = mapped_column(ForeignKey("machines.id"), nullable=True)
+    # `error` events (phase 4): the PLC's code and message.
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)

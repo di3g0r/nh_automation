@@ -28,6 +28,7 @@ from app.schemas.catalogs import (
     PackagingItemCreate,
     PackagingItemOut,
     PackagingItemUpdate,
+    PlcCredentialsOut,
     ProductCreate,
     ProductOut,
     ProductUpdate,
@@ -39,11 +40,12 @@ from app.schemas.catalogs import (
     SiteUpdate,
 )
 from app.schemas.common import Page
-from app.services import catalog_service, machine_service
+from app.services import catalog_service, machine_service, plc_credentials_service
 
 router = APIRouter(tags=["catalogs"])
 
 _manage = require_permission(Permission.CATALOGS_MANAGE)
+_plc_credentials = require_permission(Permission.MACHINES_PLC_CREDENTIALS)
 _read = require_any_permission(Permission.CATALOGS_MANAGE, Permission.INVENTORY_VIEW)
 
 _PAGE = Query(1, ge=1)
@@ -346,3 +348,16 @@ def rotate_machine_key(
 ) -> MachineWithKeyOut:
     machine, key = machine_service.rotate_key(db, item_id, actor=actor)
     return MachineWithKeyOut(machine=MachineOut.from_model(machine), api_key=key)
+
+
+@router.post("/machines/{item_id}/plc-credentials", response_model=PlcCredentialsOut)
+def plc_credentials(
+    item_id: int, db: Session = Depends(get_db), actor: User = Depends(_plc_credentials)
+) -> PlcCredentialsOut:
+    """Phase 4: create the machine's PLC database login, or rotate its password."""
+    creds = plc_credentials_service.create_or_rotate(db, item_id, actor=actor)
+    return PlcCredentialsOut(
+        machine=MachineOut.from_model(creds.machine), username=creds.username,
+        password=creds.password, created=creds.created, host=creds.host, port=creds.port,
+        database=creds.database,
+    )

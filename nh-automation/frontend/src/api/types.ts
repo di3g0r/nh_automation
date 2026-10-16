@@ -115,13 +115,25 @@ export interface Machine extends CatalogBase {
   site_id: number;
   site_name: string;
   in_maintenance: boolean;
-  has_api_key: boolean;
-  last_seen_at: string | null;
+  has_api_key: boolean; // phase-1 artifact, not shown since phase 4
+  plc_db_username: string | null;
+  last_seen_at: string | null; // last PLC contact
 }
 
 export interface MachineWithKey {
   machine: Machine;
   api_key: string;
+}
+
+/** Phase 4: returned once when a PLC login is created or rotated. */
+export interface PlcCredentials {
+  machine: Machine;
+  username: string;
+  password: string;
+  created: boolean;
+  host: string;
+  port: number;
+  database: string;
 }
 
 // Inventory --------------------------------------------------------------------
@@ -496,6 +508,16 @@ export interface MachineBoardItem {
   current: Assignment | null;
   queue_length: number;
   next_assignment: Assignment | null;
+  has_plc_login: boolean;
+  plc_last_seen_at: string | null;
+  plc_last_error: PlcError | null;
+}
+
+export interface PlcError {
+  error_code: string | null;
+  message: string | null;
+  received_at: string;
+  operation_number: string | null;
 }
 
 export interface MachineQueue {

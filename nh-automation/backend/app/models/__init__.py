@@ -9,6 +9,7 @@ from app.models.orders import (
     Reservation,
     WorkOrder,
 )
+from app.models.plc import PlcEvent
 from app.models.sequences import OrderSequence
 from app.models.session import UserSession
 from app.models.settings import Setting
@@ -37,4 +38,5 @@ __all__ = [
     "Reservation",
     "Assignment",
     "AssignmentEvent",
+    "PlcEvent",
 ]

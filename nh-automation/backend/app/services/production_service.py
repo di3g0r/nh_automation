@@ -7,12 +7,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import not_found
 from app.models.assignments import Assignment
 from app.models.catalogs import Client, Machine, RazonSocial
 from app.models.orders import WorkOrder
+from app.models.plc import PlcEvent
 from app.models.user import User
 from app.schemas.production import (
     AssignmentOut,
@@ -21,6 +23,7 @@ from app.schemas.production import (
     MachineQueueOut,
     MachineState,
     MissingForAssign,
+    PlcErrorOut,
     ProductionOrder,
 )
 from app.services import settings_service
@@ -199,6 +202,35 @@ def machine_state(machine: Machine, queue: MachineQueue) -> MachineState:
     return "free"
 
 
+def latest_plc_errors(db: Session, machine_ids: Sequence[int]) -> dict[int, PlcErrorOut]:
+    """The latest applied `error` event of each machine's PLC (phase 4)."""
+    if not machine_ids:
+        return {}
+    latest = (
+        select(func.max(PlcEvent.id))
+        .where(
+            PlcEvent.machine_id.in_(machine_ids),
+            PlcEvent.event == "error",
+            PlcEvent.result == "applied",
+        )
+        .group_by(PlcEvent.machine_id)
+    )
+    rows = (
+        db.query(PlcEvent, WorkOrder.operation_number)
+        .outerjoin(Assignment, Assignment.id == PlcEvent.assignment_id)
+        .outerjoin(WorkOrder, WorkOrder.id == Assignment.order_id)
+        .filter(PlcEvent.id.in_(latest))
+        .all()
+    )
+    return {
+        e.machine_id: PlcErrorOut(
+            error_code=e.error_code, message=e.message, received_at=e.received_at,
+            operation_number=operation_number,
+        )
+        for e, operation_number in rows
+    }
+
+
 def board(db: Session) -> list[MachineBoardItem]:
     """FR-MCH-1: one card per active machine."""
     machines = (
@@ -212,6 +244,7 @@ def board(db: Session) -> list[MachineBoardItem]:
         if a is not None
     ]
     rows = {r.id: r for r in assignment_rows(db, shown)}
+    errors = latest_plc_errors(db, [m.id for m in machines])
     out: list[MachineBoardItem] = []
     for m in machines:
         q = queues[m.id]
@@ -226,6 +259,9 @@ def board(db: Session) -> list[MachineBoardItem]:
                 current=rows[q.active.id] if q.active else None,
                 queue_length=len(q.pending),
                 next_assignment=rows[q.next_ready.id] if q.next_ready else None,
+                has_plc_login=m.plc_db_username is not None,
+                plc_last_seen_at=m.last_seen_at,
+                plc_last_error=errors.get(m.id),
             )
         )
     return out

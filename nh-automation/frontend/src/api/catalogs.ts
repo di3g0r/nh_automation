@@ -4,6 +4,7 @@ import type {
   Client,
   Machine,
   MachineWithKey,
+  PlcCredentials,
   PackagingItem,
   Page,
   Product,
@@ -39,4 +40,5 @@ export const sitesApi = resource<Site>("/sites");
 export const machinesApi = {
   ...resource<Machine, Partial<Machine>, MachineWithKey>("/machines"),
   rotateKey: (id: number) => api.post<MachineWithKey>(`/machines/${id}/rotate-key`),
+  plcCredentials: (id: number) => api.post<PlcCredentials>(`/machines/${id}/plc-credentials`),
 };

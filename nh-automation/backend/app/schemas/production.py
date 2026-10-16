@@ -159,6 +159,15 @@ class ProductionOrder(BaseModel):
     difference: DifferenceOut | None  # only once production ended
 
 
+class PlcErrorOut(BaseModel):
+    """Latest `error` event a machine's PLC reported (phase 4)."""
+
+    error_code: str | None
+    message: str | None
+    received_at: datetime
+    operation_number: str | None  # None for a machine-level error
+
+
 class MachineBoardItem(BaseModel):
     id: int
     code: str
@@ -169,6 +178,10 @@ class MachineBoardItem(BaseModel):
     current: AssignmentOut | None  # running or paused assignment
     queue_length: int  # pending assignments
     next_assignment: AssignmentOut | None  # first ready pending, if any
+    # Phase 4: PLC login configured, last PLC contact and latest PLC error.
+    has_plc_login: bool
+    plc_last_seen_at: datetime | None
+    plc_last_error: PlcErrorOut | None
 
 
 class MachineQueueOut(BaseModel):

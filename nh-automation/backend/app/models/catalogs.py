@@ -90,7 +90,11 @@ class Machine(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     in_maintenance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # SHA-256 of the key; the plain key is shown once on creation/rotation (FR-CAT-5).
+    # Phase-1 artifact, unused since phase 4 (PLCs log into PostgreSQL instead).
     api_key_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, unique=True)
+    # Phase 4: the machine's PostgreSQL login role (see plc_credentials_service).
+    plc_db_username: Mapped[str | None] = mapped_column(String(63), nullable=True, unique=True)
+    # Last PLC contact: set by the plc_events insert trigger (phase 4).
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     site: Mapped[Site] = relationship(lazy="joined")

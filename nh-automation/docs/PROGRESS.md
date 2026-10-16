@@ -464,3 +464,118 @@ verified everything and wrote these notes.
       UI built; UI only partly click-tested, see above).
 - [~] Scenarios pass in automated tests; manual run incomplete.
 - [x] Tests pass; `docs/PROGRESS.md` updated.
+
+## Phase 4 — PLC database interface (2026-10-15)
+
+### What was built
+
+- **Migration `f2a7c9d1e3b4`:** `machines.plc_db_username`,
+  `assignment_events.error_code/message`, the `plc_events` inbox (indexes for
+  the processor's work list and per-machine `seq`), the `BEFORE INSERT`
+  trigger (machine from the PLC login, `received_at`, processing columns
+  cleared, event/liters validated, `machines.last_seen_at`, `pg_notify`), the
+  `security_barrier` views `plc_pending_assignments`,
+  `plc_assignment_base_products`, `plc_assignment_packaging`, and the group
+  role `plc_machine` (SELECT on the views, column-level INSERT on
+  `plc_events`, sequence USAGE, CONNECT).
+- **`plc_credentials_service`** + `POST /machines/{id}/plc-credentials`
+  (`machines.plc_credentials`): creates or rotates the machine's PostgreSQL
+  login (`plc_m01`…, connection limit 3, statement timeout 5 s, local time
+  zone). Password shown once, audited without it.
+- **`plc_event_service`** (processor): `received_at` order, one transaction per
+  event, duplicates by (machine, seq), reason codes; applies
+  start/pause/resume/complete through `assignment_service` with
+  `Actor.plc(machine)`. New in `assignment_service`: `record_progress` (never
+  decreases), `record_error`, and a `block` kind on start refusals
+  (`NOT_FIRST_IN_QUEUE`).
+- **`plc_listener`:** daemon thread in the api process (LISTEN + 5 s poll,
+  advisory lock), started from the FastAPI lifespan.
+- **Machine board API:** `has_plc_login`, `plc_last_seen_at`, `plc_last_error`;
+  `MachineOut.plc_db_username`.
+- **Frontend:** Máquinas catalog shows *Usuario PLC* and *Último contacto del
+  PLC*; row action *Credenciales PLC* (master admin) opens a modal that
+  creates/rotates the login and shows server, port, database, user and the
+  password once. The phase-1 API key column, rotate action and creation modal
+  are gone (`MachineKeyModal` deleted). Board cards show the last PLC contact
+  (local time + "hace X min") and the latest PLC error. Order history labels
+  PLC errors (*Error del PLC*, code, message); PLC actions already showed
+  source *PLC*.
+- **Deploy:** prod compose publishes PostgreSQL (`PLC_DB_PORT`) with a
+  generated `pg_hba.conf` (`deploy/postgres/pg-hba-entrypoint.sh`: PLC logins
+  only from `PLC_ALLOWED_NETWORKS`, app only from `DOCKER_SUBNET`), fixed
+  Docker subnet, new `.env.example` entries, README section for IT (firewall
+  via `DOCKER-USER`, troubleshooting query). `.gitattributes` keeps `*.sh` LF.
+- **`docs/PLC_INTERFACE.md`** (Spanish) for the PLC programmer: connection,
+  views and columns, allowed events, cumulative liters, `seq`/duplicates,
+  rejection codes, examples, recommended loop, questions.
+
+### Tests
+
+- Backend: **255 passed**, 32 skipped (Postgres-only). New
+  `tests/test_plc_events.py` (23, SQLite): happy path, duplicates, no-seq
+  events, out-of-order progress, non-first start, wrong machine/unknown
+  assignment, bad payloads, ended assignments, rejected events not blocking,
+  error events + board, pause/resume + manual completion, **PLC completion
+  produces exactly the same stock movements as manual completion**, order
+  without expiry, credentials permission, board PLC fields.
+- New `tests/test_plc_postgres.py` (24, real migrations on a scratch DB, real
+  PLC logins): role limits/config, rotation invalidates the old password,
+  scenario 1 views (each PLC sees only its row; base share and packaging),
+  view queue order, scenario 5, scenario 3 (12 forbidden statements incl.
+  SELECT/UPDATE/DELETE on business tables, reading `plc_events`, writing
+  `machine_id`/`result`, CREATE TABLE), trigger (machine from login, last
+  contact, local `plc_timestamp`, invalid event/negative liters, inactive
+  machine), scenarios 1+2 and 4 end to end, and the LISTEN loop applying an
+  event in < 5 s. With the phase 2/3 Postgres tests: **31 passed**
+  (`TEST_POSTGRES_URL=…/nh_phase4`; the scratch DB was dropped afterwards).
+- `ruff` and `mypy` clean; `alembic check` no drift; downgrade -1 / upgrade
+  head round trip OK. Frontend: typecheck, lint (only the old AuthContext
+  warning) and build pass; **frontend tests not run this phase** (as asked).
+
+### Verified on the dev stack
+
+- `api` restarted → migration applied to the dev DB (it was at phase 3).
+- A script (real API + the processor inside the `api` container + real
+  `plc_m01`/`plc_m02` logins) ran acceptance scenarios 1–5: each PLC saw only
+  its assignment; 500 + 495 L → *Completada*, *Faltante* −5.00 L, in *Por
+  cerrar*; repeated `seq` → `duplicate`, totals unchanged; `SELECT * FROM
+  work_orders` as `plc_m01` → *permission denied*; PLC start/pause → *Pausada*,
+  resume → *En proceso*, manual completion, history with `plc` and `manual`;
+  order without expiry absent from the view. 10 events applied, 4 duplicates.
+- `pg-hba-entrypoint.sh` checked in a throwaway `postgres:16-alpine`
+  container: generated rules as intended (`pg_hba_file_rules`).
+
+### Deviations from the spec
+
+- `queue_position` in the view is renumbered 1..n (current first);
+  `labels_planned`/`barcode_mode` also in `plc_pending_assignments`;
+  `(machine_id, seq)` not unique; extra reason `INTERNAL_ERROR`; machine-level
+  `error` events without assignment accepted. All in DECISIONS 2026-10-15.
+
+### Known issues / not verified
+
+- **UI not click-tested:** the credentials modal and the board's PLC lines
+  were type-checked and built, not exercised in a browser.
+- **Prod compose not run end to end** (as in earlier phases); only the pg_hba
+  wrapper was tested on its own. Docker's userland proxy (used for loopback
+  and some setups) would make PLC connections appear from the Docker gateway
+  and be rejected — check the first real PLC connection.
+- Last PLC contact only moves when the PLC writes an event; an idle PLC that
+  only reads looks stale (no heartbeat event in the spec).
+- The processor's INFO logs ("Processed N PLC event(s)") are not visible
+  because app loggers have no handler; rejections (WARNING) are.
+- Dev DB now holds test orders from the scenario run (T-5 ANB, T-6 ANB
+  completed, in *Por cerrar*; T-7 ANB deleted) and logins `plc_m01`,
+  `plc_m02` (passwords not kept; rotate from the UI when needed).
+- Handover checklist (PLC brand/model, direct PostgreSQL access, IPs, seq
+  counter, firewall, first-machine trial) is pending — coordination work.
+- Carried over: bundle > 500 kB; phase-3 UI items not click-tested.
+
+### Definition of done
+
+- [x] Scenarios pass on the dev stack with real PostgreSQL (script above, plus
+      the automated Postgres tests).
+- [x] `docs/PLC_INTERFACE.md` ready to hand to the PLC programmer.
+- [x] Tests pass (backend + Postgres-only; frontend tests skipped by request);
+      `docs/PROGRESS.md` updated. Handover checklist: later, with the PLC
+      programmer.

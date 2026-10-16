@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     # NFR-7a: single timezone setting, UTC stored, this used for display/"today".
     tz: str = "America/Mazatlan"
 
+    # Phase 4 (PLC database interface). PLC_ALLOWED_NETWORKS is applied by the
+    # prod db container's pg_hba.conf (deploy/postgres/); the API only shows
+    # the connection data to the master admin when creating PLC credentials.
     plc_allowed_networks: str = "192.168.50.0/24"
+    plc_db_host: str = ""  # server address the PLCs connect to (shown, not used)
+    plc_db_port: int = 5432
+    # Background PLC event processor in the api process (off in tests).
+    plc_event_processor: bool = True
 
     backup_dir: str = "/backups"
     backup_retention_days: int = 30

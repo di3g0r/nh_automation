@@ -1,4 +1,4 @@
-import { Badge, Button, Group, Modal, Select, Stack, Text, Tooltip } from "@mantine/core";
+import { Badge, Button, Select, Text, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconFileImport } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,7 +16,6 @@ import type {
   Client,
   ImportKind,
   Machine,
-  MachineWithKey,
   PackagingCategory,
   PackagingItem,
   Product,
@@ -26,9 +25,10 @@ import type {
 import { CatalogPage } from "../../components/catalogs/CatalogPage";
 import type { CatalogConfig } from "../../components/catalogs/CatalogPage";
 import { ImportModal } from "../../components/catalogs/ImportModal";
-import { MachineKeyModal } from "../../components/catalogs/MachineKeyModal";
+import { PlcCredentialsModal } from "../../components/catalogs/PlcCredentialsModal";
+import { useAuth } from "../../context/AuthContext";
 import { strings } from "../../i18n/strings";
-import { formatDateTime, formatLiters } from "../../utils/datetime";
+import { formatAgo, formatDateTime, formatLiters } from "../../utils/datetime";
 import { notifyError } from "../../utils/notify";
 
 const t = strings.catalogs;
@@ -306,9 +306,9 @@ export function SitesPage() {
 
 export function MachinesPage() {
   const m = t.machines;
-  const queryClient = useQueryClient();
-  const [shownKey, setShownKey] = useState<MachineWithKey | null>(null);
-  const [rotating, setRotating] = useState<Machine | null>(null);
+  const { hasPermission } = useAuth();
+  // Phase 4: the PLC logs into the database; the phase-1 API key is hidden.
+  const [credentialsFor, setCredentialsFor] = useState<Machine | null>(null);
 
   const { data: sites } = useQuery({
     queryKey: ["sites", "all-for-select"],
@@ -326,16 +326,6 @@ export function MachinesPage() {
   );
   const defaultSite = sites?.items.find((s) => s.is_default);
 
-  const rotate = useMutation({
-    mutationFn: (row: Machine) => machinesApi.rotateKey(row.id),
-    onSuccess: (res) => {
-      setRotating(null);
-      setShownKey(res);
-      queryClient.invalidateQueries({ queryKey: ["machines"] });
-    },
-    onError: notifyError,
-  });
-
   const config: CatalogConfig<Machine> = {
     queryKey: "machines",
     title: m.title,
@@ -345,7 +335,6 @@ export function MachinesPage() {
     create: (payload) =>
       machinesApi.create({ site_id: defaultSite?.id, ...payload } as Partial<Machine>),
     update: machinesApi.update,
-    onCreated: (res) => setShownKey(res as MachineWithKey),
     columns: [
       { label: m.code, render: (r) => r.code },
       { label: m.name, render: (r) => r.name },
@@ -355,19 +344,29 @@ export function MachinesPage() {
         render: (r) => (r.in_maintenance ? <Badge color="orange">{t.si}</Badge> : t.no),
       },
       {
-        label: m.llave,
+        label: m.plcUsuario,
         render: (r) =>
-          r.has_api_key ? (
-            <Badge color="teal" variant="light">
-              {m.conLlave}
+          r.plc_db_username ? (
+            <Badge color="teal" variant="light" tt="none">
+              {r.plc_db_username}
             </Badge>
           ) : (
             <Badge color="gray" variant="light">
-              {m.sinLlave}
+              {m.sinPlc}
             </Badge>
           ),
       },
-      { label: m.ultimaSenal, render: (r) => formatDateTime(r.last_seen_at) || "—" },
+      {
+        label: m.ultimoContacto,
+        render: (r) =>
+          r.last_seen_at ? (
+            <Tooltip label={formatDateTime(r.last_seen_at)}>
+              <Text size="sm">{formatAgo(r.last_seen_at)}</Text>
+            </Tooltip>
+          ) : (
+            "—"
+          ),
+      },
     ],
     fields: [
       { name: "code", label: m.code, type: "text", required: true },
@@ -382,33 +381,15 @@ export function MachinesPage() {
       },
       { name: "in_maintenance", label: m.in_maintenance, type: "checkbox" },
     ],
-    rowActions: [{ label: m.rotarLlave, color: "orange", onClick: (r) => setRotating(r) }],
+    rowActions: hasPermission("machines.plc_credentials")
+      ? [{ label: m.credencialesPlc, color: "orange", onClick: (r) => setCredentialsFor(r) }]
+      : [],
   };
 
   return (
     <>
       <CatalogPage config={config} />
-      <MachineKeyModal data={shownKey} onClose={() => setShownKey(null)} />
-      <Modal opened={rotating !== null} onClose={() => setRotating(null)} title={m.rotarLlave}>
-        <Stack>
-          <Text>
-            {rotating?.code} — {rotating?.name}
-          </Text>
-          <Text size="sm">{m.rotarConfirm}</Text>
-          <Group justify="end">
-            <Button variant="default" onClick={() => setRotating(null)}>
-              {strings.common.cancelar}
-            </Button>
-            <Button
-              color="orange"
-              loading={rotate.isPending}
-              onClick={() => rotating && rotate.mutate(rotating)}
-            >
-              {m.rotarLlave}
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <PlcCredentialsModal machine={credentialsFor} onClose={() => setCredentialsFor(null)} />
     </>
   );
 }

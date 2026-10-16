@@ -14,6 +14,7 @@ import os
 os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+pysqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("PLC_EVENT_PROCESSOR", "false")
 
 import pytest
 from fastapi.testclient import TestClient

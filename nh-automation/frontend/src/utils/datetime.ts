@@ -33,6 +33,19 @@ export function formatDate(iso: string | null | undefined): string {
   }).format(new Date(iso));
 }
 
+/** "hace X min" style age of a past timestamp (machine board, PLC contact). */
+export function formatAgo(iso: string | null | undefined, now: Date = new Date()): string {
+  if (!iso) return "";
+  const seconds = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 1000));
+  if (seconds < 60) return "hace menos de 1 min";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `hace ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} ${days === 1 ? "día" : "días"}`;
+}
+
 /** `1,000.00 L` formatting for liter quantities (overview §6). */
 export function formatLiters(value: number | string): string {
   const n = typeof value === "string" ? Number(value) : value;

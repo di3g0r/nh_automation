@@ -170,22 +170,37 @@ def machine_queues(db: Session, machines: Sequence[Machine]) -> dict[int, Machin
     return out
 
 
+StartBlock = Literal["order_not_ready", "inactive", "maintenance", "busy", "not_first"]
+
+
+def start_block(
+    assignment: Assignment, order_status: str, queue: MachineQueue
+) -> tuple[StartBlock, str] | None:
+    """Why a pending assignment cannot start now: (kind, Spanish message), or
+    None (BR-14, BR-20)."""
+    machine = queue.machine
+    if order_status not in READY_STATUSES:
+        return (
+            "order_not_ready",
+            "La orden no está asignada: falta la fecha de caducidad o asignar máquinas.",
+        )
+    if not machine.is_active:
+        return "inactive", f"La máquina {machine.code} está inactiva."
+    if machine.in_maintenance:
+        return "maintenance", f"La máquina {machine.code} está en mantenimiento."
+    if queue.active is not None and queue.active.id != assignment.id:
+        return "busy", f"La máquina {machine.code} está ocupada con otra orden."
+    if queue.next_ready is not None and queue.next_ready.id != assignment.id:
+        return "not_first", f"Hay otra orden antes en la fila de la máquina {machine.code}."
+    return None
+
+
 def start_blocked_reason(
     assignment: Assignment, order_status: str, queue: MachineQueue
 ) -> str | None:
-    """Why a pending assignment cannot start now (Spanish), or None (BR-14, BR-20)."""
-    machine = queue.machine
-    if order_status not in READY_STATUSES:
-        return "La orden no está asignada: falta la fecha de caducidad o asignar máquinas."
-    if not machine.is_active:
-        return f"La máquina {machine.code} está inactiva."
-    if machine.in_maintenance:
-        return f"La máquina {machine.code} está en mantenimiento."
-    if queue.active is not None and queue.active.id != assignment.id:
-        return f"La máquina {machine.code} está ocupada con otra orden."
-    if queue.next_ready is not None and queue.next_ready.id != assignment.id:
-        return f"Hay otra orden antes en la fila de la máquina {machine.code}."
-    return None
+    """Why a pending assignment cannot start now (Spanish), or None."""
+    block = start_block(assignment, order_status, queue)
+    return block[1] if block else None
 
 
 # Order status --------------------------------------------------------------------
@@ -259,13 +274,15 @@ def _actor_info(actor: Actor) -> dict[str, Any]:
 
 def _event(
     db: Session, assignment: Assignment, event: str, actor: Actor,
-    liters: Decimal | None = None,
+    liters: Decimal | None = None, *, error_code: str | None = None,
+    message: str | None = None,
 ) -> None:
     db.add(
         AssignmentEvent(
             assignment_id=assignment.id, event=event, liters=liters, source=actor.source,
             user_id=actor.user.id if actor.user else None,
             machine_id=actor.machine.id if actor.machine else None,
+            error_code=error_code, message=message,
         )
     )
 
@@ -504,10 +521,11 @@ def start(db: Session, assignment_id: int, actor: Actor, *, commit: bool = True)
     assignment, order, machine = _begin(db, assignment_id, actor)
     _require(assignment, ("pending",), "Solo se puede iniciar una asignación pendiente.")
     queue = machine_queues(db, [machine])[machine.id]
-    reason = start_blocked_reason(assignment, order.status, queue)
-    if reason is not None:
-        code = "ORDER_NOT_ASSIGNED" if order.status not in READY_STATUSES else "MACHINE_NOT_READY"
-        raise _conflict(code, reason, {"order_status": order.status})
+    block = start_block(assignment, order.status, queue)
+    if block is not None:
+        kind, reason = block
+        code = "ORDER_NOT_ASSIGNED" if kind == "order_not_ready" else "MACHINE_NOT_READY"
+        raise _conflict(code, reason, {"order_status": order.status, "block": kind})
     before = order.status
     assignment.status = "running"
     assignment.started_at = utc_now()
@@ -557,6 +575,55 @@ def complete(
     db.flush()
     _move_stock_for_assignment(db, order, assignment, actor)
     return _finish(db, order, assignment, "complete", actor, before, liters, commit)
+
+
+def record_progress(
+    db: Session, assignment_id: int, liters: Decimal, actor: Actor, *, commit: bool = True,
+) -> bool:
+    """Cumulative liters while running or paused (phase 4, PLC `progress`).
+    Actual liters never decrease (BR-13): a lower or equal value changes
+    nothing. Returns whether the liters changed. No assignment event or audit
+    entry per progress (the raw PLC events keep them)."""
+    assignment, _order, _machine = _begin(db, assignment_id, actor)
+    _require(
+        assignment, ("running", "paused"),
+        "Solo se registra avance de una asignación en proceso o en pausa.",
+    )
+    value = stock_service.normalize_quantity("product", Decimal(liters))
+    if value < 0:
+        raise _invalid("INVALID_QUANTITY", "Los litros no pueden ser negativos.")
+    changed = assignment.actual_liters is None or value > Decimal(assignment.actual_liters)
+    if changed:
+        assignment.actual_liters = value
+    assignment.last_source = actor.source
+    db.flush()
+    if commit:
+        db.commit()
+    return changed
+
+
+def record_error(
+    db: Session, assignment_id: int, error_code: str | None, message: str | None,
+    actor: Actor, *, commit: bool = True,
+) -> Assignment:
+    """A machine error reported on an open assignment (phase 4, PLC `error`):
+    an `error` assignment event plus an order history entry; no status change."""
+    assignment, order, machine = _begin(db, assignment_id, actor)
+    _require(
+        assignment, OPEN_ASSIGNMENT_STATUSES,
+        "Solo se registran errores de una asignación pendiente, en proceso o en pausa.",
+    )
+    _event(db, assignment, "error", actor, error_code=error_code, message=message)
+    _audit_order(
+        db, order, "error", actor, None,
+        {"machine": machine.code, **_actor_info(actor), "error_code": error_code,
+         "message": message},
+    )
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(assignment)
+    return assignment
 
 
 # Stock (BR-8, BR-9, BR-10) --------------------------------------------------------------

@@ -8,9 +8,9 @@ Build **one phase per Claude Code session**, in order. Each phase delivers somet
 | 1 | `phase-1-catalogs-inventory.md` | Products, packaging, machines; import; stock | Done |
 | 1b | `phase-1b-v2-updates.md` | Razones sociales, Production manager role, permissions, T-/R- sequences, settings (decisions applied to built code) | Done |
 | 2 | `phase-2-work-orders.md` | Digital work orders (Producto base / Producto terminado); overselling blocked; comments; printing | Done |
-| 3 | `phase-3-assignments-operator.md` | Production manager assigns machines, production controls, pause/resume, closing — full process without paper; removes the operator role | **Next** |
-| 4 | `phase-4-plc-database-interface.md` | PLCs read pending orders and write events in the database; document for the PLC programmer | |
-| 6 | `phase-6-dashboard.md` | Production dashboard | |
+| 3 | `phase-3-assignments-operator.md` | Production manager assigns machines, production controls, pause/resume, closing — full process without paper; removes the operator role | Done |
+| 4 | `phase-4-plc-database-interface.md` | PLCs read pending orders and write events in the database; document for the PLC programmer | Done (handover pending) |
+| 6 | `phase-6-dashboard.md` | Production dashboard | **Next** |
 
 `phase-4-plc-api-simulator.md` and `phase-5-real-plc.md` are obsolete and can be deleted. There is no phase 5.
 

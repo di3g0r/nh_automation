@@ -16,9 +16,9 @@
 | `phase-1-catalogs-inventory.md` | Products, packaging, clients, sites, machines, imports, stock | Done |
 | `phase-1b-v2-updates.md` | Apply the v2/v3 decisions to code already built (razones sociales, Production manager role, permissions, sequences, settings) | Done |
 | `phase-2-work-orders.md` | Work orders (one or more base products), numbering, reservations, overselling block, comments, printing | Done |
-| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, production controls, completion, closing; removes the operator role from the UI | **Next** |
-| `phase-4-plc-database-interface.md` | Database views and event table the PLCs use; event processing; document and handover checklist for the PLC programmer | |
-| `phase-6-dashboard.md` | Production dashboard | |
+| `phase-3-assignments-operator.md` | Production manager queue, machine assignment, production controls, completion, closing; removes the operator role from the UI | Done |
+| `phase-4-plc-database-interface.md` | Database views and event table the PLCs use; event processing; document and handover checklist for the PLC programmer | Done (handover pending) |
+| `phase-6-dashboard.md` | Production dashboard | **Next** |
 
 `phase-4-plc-api-simulator.md` and `phase-5-real-plc.md` are obsolete and can be deleted. There is no phase 5; the dashboard keeps the number 6.
 

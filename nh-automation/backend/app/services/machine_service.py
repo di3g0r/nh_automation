@@ -1,8 +1,9 @@
 """Machine registry (FR-CAT-5).
 
 A machine gets a random API key on creation and on rotation. The plain key is
-returned once and only its SHA-256 hash is stored (NFR-1); PLC endpoints
-(phase 4) authenticate with `find_by_api_key`.
+returned once and only its SHA-256 hash is stored (NFR-1). Since phase 4 the
+key is unused (PLCs log into PostgreSQL, see plc_credentials_service) and
+hidden in the UI; it is kept for a possible HTTP gateway.
 """
 
 from __future__ import annotations

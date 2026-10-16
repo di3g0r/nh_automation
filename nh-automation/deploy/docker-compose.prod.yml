@@ -11,14 +11,25 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
       TZ: ${TZ:-America/Mazatlan}
+      # Phase 4: pg_hba.conf is generated from these at start
+      # (deploy/postgres/pg-hba-entrypoint.sh).
+      PLC_ALLOWED_NETWORKS: ${PLC_ALLOWED_NETWORKS}
+      DOCKER_SUBNET: ${DOCKER_SUBNET:-172.28.0.0/16}
+    entrypoint: ["/bin/sh", "/deploy/pg-hba-entrypoint.sh"]
+    command: ["postgres"]
     volumes:
       - db-data:/var/lib/postgresql/data
+      - ./postgres/pg-hba-entrypoint.sh:/deploy/pg-hba-entrypoint.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
-    # No ports published: only reachable from other containers (NFR-2).
+    # Phase 4: published for the PLCs only. pg_hba.conf accepts PLC logins
+    # only from PLC_ALLOWED_NETWORKS and the app user only from the Docker
+    # network; also restrict the port with the firewall (README, NFR-2).
+    ports:
+      - "${PLC_DB_PORT:-5432}:5432"
 
   api:
     build:
@@ -35,6 +46,9 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       TZ: ${TZ:-America/Mazatlan}
       PLC_ALLOWED_NETWORKS: ${PLC_ALLOWED_NETWORKS}
+      # Shown to the master admin with new PLC credentials (phase 4).
+      PLC_DB_HOST: ${PLC_DB_HOST:-}
+      PLC_DB_PORT: ${PLC_DB_PORT:-5432}
       # External catalog DB for imports (empty = disabled); see backend/external_sources/README.md
       EXTERNAL_CATALOG_DB_URL: ${EXTERNAL_CATALOG_DB_URL:-}
     volumes:
@@ -79,6 +93,13 @@ services:
       TZ: ${TZ:-America/Mazatlan}
     volumes:
       - ./backups:/backups
+
+# Fixed subnet so pg_hba.conf can allow the app only from the Docker network.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${DOCKER_SUBNET:-172.28.0.0/16}
 
 volumes:
   db-data:

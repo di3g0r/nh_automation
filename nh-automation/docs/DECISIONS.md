@@ -209,3 +209,62 @@ Record decisions made during implementation that are not in the specs (date, dec
 - **Expiry:** any day is stored as the 1st of the month. A Trabajo expiry can be
   cleared (back to Creada); a Retrabajo expiry cannot.
 - `session_timeout_operator_hours` removed (no operators).
+
+## 2026-10-15 — Phase 4
+
+- **PLC logins created by the app.** The app's database user can create roles
+  (the Docker image's `POSTGRES_USER` is a superuser), so the master admin
+  creates/rotates them from *Máquinas → Credenciales PLC*
+  (`POST /machines/{id}/plc-credentials`); no privileged script in `deploy/`.
+  If the app user cannot create roles, the endpoint answers
+  `PLC_CREDENTIALS_UNAVAILABLE`. Username = `plc_` + machine code in lowercase
+  (`plc_m01`). Password: 24 letters/digits (safe for PLC keyboards), shown once.
+  Each login gets `CONNECTION LIMIT 3`, `statement_timeout = 5s` and
+  `timezone = America/Mazatlan` (PLC timestamps without offset are local).
+  Roles are cluster-wide: the migration's downgrade leaves them in place.
+- **Event processor = daemon thread in the api process**, started from the
+  FastAPI lifespan: `LISTEN plc_events` + 5 s poll. A PostgreSQL advisory lock
+  keeps it to one processor if several API processes run. Disabled with
+  `PLC_EVENT_PROCESSOR=false` (tests) and on SQLite.
+- **Trigger uses `session_user`.** It is `SECURITY DEFINER` (it must read
+  `machines` and update `last_seen_at`), so inside it `current_user` is the
+  owner; the views use `current_user` (the PLC login).
+- **`(machine_id, seq)` is not a unique index.** A unique index would make a
+  PLC's retry fail at insert instead of being stored and marked `duplicate`
+  (BR-13). Duplicates are detected by the processor (any earlier event of the
+  machine with the same `seq`). Events without `seq` are never duplicates.
+- **No FK on `plc_events.assignment_id`**, so a wrong id is stored and
+  rejected (`NOT_ON_MACHINE`) instead of failing the PLC's insert.
+- **`reject_reason` = `"CODE: detail"`**, CODE one of the spec's four, plus
+  `INTERNAL_ERROR` for an unexpected exception (logged with traceback) so a
+  bug never blocks the machine's later events. Machine busy, maintenance and
+  order not ready map to `INVALID_TRANSITION`.
+- **`progress` writes no `assignment_events` row and no audit entry** (one
+  every 5–10 s would flood the order history); it only raises
+  `actual_liters`. The raw events stay in `plc_events`. A lower or equal value
+  is `applied` with no change.
+- **`complete` from the PLC** uses `liters` as the final actual liters even if
+  lower than the last progress (the spec's "final actual liters").
+- **`error` events:** with an assignment → `assignment_events` row (`error`,
+  code, message) + order history entry (`error`), no status change; refused
+  for completed/cancelled assignments. Without an assignment → machine-level
+  error, kept only in `plc_events`. The board shows the latest applied error.
+- **View `queue_position` is renumbered 1..n** (current running/paused first,
+  then pending by queue position), because the stored positions of pending
+  assignments are renumbered on reorder independently of the running one.
+  `plc_pending_assignments` also carries `labels_planned` and `barcode_mode`
+  (orders without packaging have no row in `plc_assignment_packaging`).
+  Comments joined newest first with ` | `. Views also require the machine to
+  be active.
+- **Last PLC contact = last event inserted** (trigger). Reads cannot update
+  it, so an idle machine's contact ages; the board shows the time and "hace X
+  min" without an offline badge (the old `plc_offline_seconds` setting stays
+  unused).
+- **Prod `pg_hba.conf`** is generated at db start by
+  `deploy/postgres/pg-hba-entrypoint.sh` from `PLC_ALLOWED_NETWORKS`:
+  `+plc_machine` only from those CIDRs, every other user only from the fixed
+  Docker subnet `DOCKER_SUBNET` (default `172.28.0.0/16`). Dev keeps the
+  image's default (all hosts, password).
+- **Phase-1 API key** hidden in the UI (column, rotate action, creation
+  modal removed); the backend endpoints remain for a possible HTTP gateway.
+- `*.sh` files forced to LF in `.gitattributes` (they run in Linux containers).

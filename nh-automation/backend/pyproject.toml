@@ -37,6 +37,11 @@ select = ["E", "F", "I", "UP", "B"]
 # B008: FastAPI's Depends(...)-as-default is the documented idiom, not a bug.
 ignore = ["B008"]
 
+[tool.ruff.lint.per-file-ignores]
+# Reuses the phase-3 pytest fixtures by importing them; pytest injects them
+# by parameter name, which ruff reads as a redefinition.
+"tests/test_plc_events.py" = ["F811"]
+
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true

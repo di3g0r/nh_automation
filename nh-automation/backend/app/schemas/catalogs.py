@@ -198,8 +198,9 @@ class MachineOut(_Out):
     site_id: int
     site_name: str
     in_maintenance: bool
-    has_api_key: bool
-    last_seen_at: datetime | None
+    has_api_key: bool  # phase-1 artifact, hidden in the UI since phase 4
+    plc_db_username: str | None  # phase 4: the PLC's PostgreSQL login
+    last_seen_at: datetime | None  # last PLC contact (plc_events trigger)
 
     @classmethod
     def from_model(cls, m) -> MachineOut:  # type: ignore[no-untyped-def]
@@ -212,6 +213,7 @@ class MachineOut(_Out):
             is_active=m.is_active,
             in_maintenance=m.in_maintenance,
             has_api_key=bool(m.api_key_hash),
+            plc_db_username=m.plc_db_username,
             last_seen_at=m.last_seen_at,
             created_at=m.created_at,
             updated_at=m.updated_at,
@@ -223,6 +225,19 @@ class MachineWithKeyOut(BaseModel):
 
     machine: MachineOut
     api_key: str
+
+
+class PlcCredentialsOut(BaseModel):
+    """Returned only when a PLC login is created or rotated: the password is
+    shown once and never stored by the app (phase 4)."""
+
+    machine: MachineOut
+    username: str
+    password: str
+    created: bool  # False = new password for an existing login
+    host: str  # PLC_DB_HOST ("" if not configured)
+    port: int
+    database: str
 
 
 class MachineCreate(_Stripped):
